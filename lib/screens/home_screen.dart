@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'package:web/web.dart' as web;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
@@ -12,9 +13,11 @@ import '../widgets/glass_container.dart';
 import '../widgets/role_selector.dart';
 import '../widgets/schedule_grid.dart';
 import '../services/notification_service.dart';
+import '../services/course_registration_service.dart';
 import 'lecturer_dashboard.dart';
 import 'admin_dashboard.dart';
 import 'welcome_screen.dart';
+import 'elearning/elearning_dashboard.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserRole role;
@@ -42,6 +45,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Timer? _timer;
   DateTime _currentTime = DateTime.now();
   final NotificationService _notificationService = NotificationService();
+  final CourseRegistrationService _regService = CourseRegistrationService();
+  
+  // Registration state
+  int _regStep = 0;
+  String _studentRegYear = '2025-2026';
+  String _studentRegSemester = 'Học kỳ 1';
 
   // Lecturer state
   int _lecturerMenuIndex = 0;
@@ -74,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'Tin tức & Thông báo',
     'Lịch',
     'Học tập',
+    'Bảng điểm (Transcript)',
     'Cố vấn Học tập',
     'Đánh giá & Khảo sát',
     'Học phí',
@@ -81,6 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
     'Phần mềm',
     'Sổ tay Sinh viên',
     'Đăng ký Cấp Giấy xác nhận',
+    'E-Learning (Test & Quiz)',
   ];
 
   @override
@@ -276,9 +287,12 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 8),
           const Text('EduTrack', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(width: 32),
-          _buildTopNavLink(Icons.home, 'Trang chủ'),
+          _buildTopNavLink(Icons.home, 'Trang chủ', onTap: () => setState(() => _selectedMenuIndex = 0)),
           _buildTopNavLink(Icons.mail, 'Mail'),
-          _buildTopNavLink(Icons.check_circle, 'Learning'),
+          _buildTopNavLink(Icons.check_circle, 'E-Learning', onTap: () {
+            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}', '_blank');
+          }),
           _buildTopNavLink(Icons.forum, 'Forum'),
           _buildTopNavLink(Icons.library_books, 'e-Lib'),
           const Spacer(),
@@ -288,15 +302,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTopNavLink(IconData icon, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white70, size: 16),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
-        ],
+  Widget _buildTopNavLink(IconData icon, String label, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 16),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          ],
+        ),
       ),
     );
   }
@@ -591,13 +608,16 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2: return _buildNewsContent();
       case 3: return _buildScheduleContent();
       case 4: return _buildStudyContent();
-      case 5: return _buildAdvisorContent();
-      case 6: return _buildSurveyContent();
-      case 7: return _buildTuitionContent();
-      case 8: return _buildLibraryContent();
-      case 9: return _buildSoftwareContent();
-      case 10: return _buildHandbookContent();
-      case 11: return _buildCertificateContent();
+      case 5: return _buildTranscriptContent();
+      case 6: return _buildAdvisorContent();
+      case 7: return _buildSurveyContent();
+      case 8: return _buildTuitionContent();
+      case 9: return _buildLibraryContent();
+      case 10: return _buildSoftwareContent();
+      case 11: return _buildHandbookContent();
+      case 12: return _buildCertificateContent();
+      case 13: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
+      case 999: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
       default: return _buildRulesContent();
     }
   }
@@ -1202,40 +1222,45 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 2: Tin tức & Thông báo
   Widget _buildNewsContent() {
-    final notifications = _notificationService.notifications;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildScreenHeader(Icons.article, 'TIN TỨC & THÔNG BÁO'),
-          const SizedBox(height: 24),
-          ...notifications.map((n) => _buildNotificationItem(
-            n.title, n.senderRole, n.date,
-            isNew: _notificationService.isNew(n.id),
-            isFromLecturer: n.isFromLecturer,
-            onTap: () {
-              _notificationService.markAsSeen(n.id);
-              setState(() {});
-              _showNotificationDetail(n);
-            },
-          )),
-          if (notifications.isEmpty)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(48),
-                child: Column(
-                  children: [
-                    Icon(Icons.notifications_off, size: 48, color: Colors.white.withOpacity(0.3)),
-                    const SizedBox(height: 16),
-                    Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
-                  ],
+    return StreamBuilder<List<AppNotification>>(
+      stream: _notificationService.stream,
+      builder: (context, snapshot) {
+        final notifications = _notificationService.notifications;
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildScreenHeader(Icons.article, 'TIN TỨC & THÔNG BÁO'),
+              const SizedBox(height: 24),
+              ...notifications.map((n) => _buildNotificationItem(
+                n.title, n.senderRole, n.date,
+                isNew: _notificationService.isNew(n.id),
+                isFromLecturer: n.isFromLecturer,
+                onTap: () {
+                  _notificationService.markAsSeen(n.id);
+                  setState(() {});
+                  _showNotificationDetail(n);
+                },
+              )),
+              if (notifications.isEmpty)
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(48),
+                    child: Column(
+                      children: [
+                        Icon(Icons.notifications_off, size: 48, color: Colors.white.withOpacity(0.3)),
+                        const SizedBox(height: 16),
+                        Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-            ),
-        ],
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1371,21 +1396,17 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.only(left: 32, top: 32, right: 32, bottom: 16),
           child: _buildScreenHeader(Icons.calendar_month, 'LỊCH HỌC TẬP & THI CỬ'),
         ),
-        _buildScheduleToolbar(),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('schedules')
-                .where('studentClass', isEqualTo: _classController.text.trim())
-                .snapshots(),
+            stream: FirebaseFirestore.instance.collection('schedules').snapshots(),
             builder: (context, snapshot) {
               // Only show loading on initial load, not on stream updates
               if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
               if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return Center(
-                  child: Text('Chưa có lịch học nào cho lớp ${_classController.text}', style: const TextStyle(color: Colors.white70)),
+                return const Center(
+                  child: Text('Chưa có lịch học nào trên hệ thống.', style: TextStyle(color: Colors.white70)),
                 );
               }
 
@@ -1409,67 +1430,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildScheduleToolbar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.02),
-        border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1)), top: BorderSide(color: Colors.white.withOpacity(0.1))),
-      ),
-      child: Row(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
-                child: const Icon(Icons.chevron_left, color: Colors.white70, size: 20),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
-                child: const Icon(Icons.chevron_right, color: Colors.white70, size: 20),
-              ),
-              const SizedBox(width: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-                child: const Text('Hôm nay', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-              ),
-              const SizedBox(width: 8),
-              const Icon(Icons.arrow_drop_down, color: Colors.white54),
-            ],
-          ),
-          const Spacer(),
-          const Text('22/06/2026 - 28/06/2026', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          const Spacer(),
-          Row(
-            children: [
-              _buildViewBtn('Ngày', false),
-              _buildViewBtn('Tuần', true),
-              _buildViewBtn('Tháng', false),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildViewBtn(String text, bool isActive) {
-    return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isActive ? Colors.white.withOpacity(0.2) : Colors.transparent,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(text, style: TextStyle(color: isActive ? Colors.white : Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
-    );
-  }
-
-
-
   // 4: Học tập
   Widget _buildStudyContent() {
     switch (_selectedStudySubIndex) {
@@ -1485,46 +1445,507 @@ class _HomeScreenState extends State<HomeScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(32),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildScreenHeader(Icons.app_registration, 'ĐĂNG KÝ MÔN HỌC'),
-          const SizedBox(height: 48),
-          const Text('BẠN PHẢI CHỌN HỌC KỲ VÀ NĂM HỌC ĐỂ ĐĂNG KÝ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(32),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _buildStepDropdown('1', 'Chọn Năm học', ['2023-2024', '2024-2025']),
-                const SizedBox(width: 48),
-                _buildStepDropdown('2', 'Chọn Học kỳ', ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè']),
-              ],
-            ),
-          ),
           const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tính năng đăng ký đang được bảo trì.')));
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade700,
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          
+          // Progress Bar
+          Row(
+            children: [
+              _buildRegStepIndicator(0, 'Chọn Học kỳ'),
+              _buildRegStepLine(0),
+              _buildRegStepIndicator(1, 'Chọn Môn học'),
+              _buildRegStepLine(1),
+              _buildRegStepIndicator(2, 'Kết quả ĐK'),
+            ],
+          ),
+          const SizedBox(height: 48),
+
+          // Content based on step
+          if (_regStep == 0) _buildRegStep0(),
+          if (_regStep == 1) _buildRegStep1(),
+          if (_regStep == 2) _buildRegStep2(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegStepIndicator(int stepIndex, String label) {
+    final isActive = _regStep >= stepIndex;
+    final isCurrent = _regStep == stepIndex;
+    return Column(
+      children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: isActive ? AppColors.studentColor : Colors.white.withOpacity(0.1),
+            shape: BoxShape.circle,
+            border: isCurrent ? Border.all(color: Colors.white, width: 2) : null,
+            boxShadow: isActive ? [BoxShadow(color: AppColors.studentColor.withOpacity(0.4), blurRadius: 8)] : [],
+          ),
+          child: Center(child: Text('${stepIndex + 1}', style: TextStyle(color: isActive ? Colors.white : Colors.white54, fontWeight: FontWeight.bold))),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: TextStyle(color: isActive ? Colors.white : Colors.white54, fontSize: 12, fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal)),
+      ],
+    );
+  }
+
+  Widget _buildRegStepLine(int stepIndex) {
+    final isActive = _regStep > stepIndex;
+    return Expanded(
+      child: Container(
+        height: 2,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+        color: isActive ? AppColors.studentColor : Colors.white.withOpacity(0.1),
+      ),
+    );
+  }
+
+  Widget _buildRegStep0() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        const Text('BẠN PHẢI CHỌN HỌC KỲ VÀ NĂM HỌC ĐỂ ĐĂNG KÝ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildStepDropdown('1', 'Chọn Năm học', ['2024-2025', '2025-2026', '2026-2027'], _studentRegYear, (v) => setState(() => _studentRegYear = v!)),
+              const SizedBox(width: 48),
+              _buildStepDropdown('2', 'Chọn Học kỳ', ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'], _studentRegSemester, (v) => setState(() => _studentRegSemester = v!)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 32),
+        ElevatedButton(
+          onPressed: () {
+            setState(() => _regStep = 1);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.studentColor,
+            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+          ),
+          child: const Text('TIẾP TỤC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegStep1() {
+    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Các môn mở đăng ký - $_studentRegSemester ($_studentRegYear)', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            TextButton.icon(
+              onPressed: () => setState(() => _regStep = 0),
+              icon: const Icon(Icons.arrow_back, color: Colors.white70),
+              label: const Text('Đổi Học kỳ', style: TextStyle(color: Colors.white70)),
             ),
-            child: const Text('TIẾP TỤC', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        StreamBuilder<QuerySnapshot>(
+          stream: _regService.getMyRegistrationsStream(userId, _studentRegSemester, _studentRegYear),
+          builder: (context, myRegSnap) {
+            if (!myRegSnap.hasData && myRegSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            
+            final myRegs = myRegSnap.data?.docs.map((e) => e.data() as Map<String, dynamic>).toList() ?? [];
+            final totalCredits = myRegs.fold<int>(0, (sum, reg) => sum + ((reg['credits'] as num?)?.toInt() ?? 0));
+            
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(color: AppColors.studentColor.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                      child: Text('Đã đăng ký: $totalCredits / 25 tín chỉ', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold)),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => setState(() => _regStep = 2),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.1), foregroundColor: Colors.white),
+                      child: const Text('Xem Kết quả Đăng ký'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                
+                StreamBuilder<QuerySnapshot>(
+                  stream: _regService.getAllCoursesStream(),
+                  builder: (context, availableSnap) {
+                    if (!availableSnap.hasData && availableSnap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    
+                    // Client-side filtering
+                    final allDocs = availableSnap.data?.docs ?? [];
+                    final availableCourses = allDocs.where((doc) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final matchSemester = d['semester'] == _studentRegSemester;
+                      final matchYear = d['academicYear'] == _studentRegYear;
+                      final isOpen = d['status'] == 'open';
+                      
+                      final studentMajor = _majorController.text.trim().toLowerCase();
+                      final courseMajor = (d['major'] ?? '').toString().trim().toLowerCase();
+                      
+                      // Bỏ qua filter ngành nếu sinh viên chưa có ngành hoặc ngành = "chưa cập nhật"
+                      final skipMajorCheck = studentMajor.isEmpty || studentMajor == 'chưa cập nhật';
+                      final matchMajor = skipMajorCheck || courseMajor == studentMajor;
+                      
+                      return matchSemester && matchYear && isOpen && matchMajor;
+                    }).toList();
+                    
+                    if (availableCourses.isEmpty) {
+                      return Center(child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(children: [
+                          Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
+                          const SizedBox(height: 16),
+                          Text('Không có môn học nào mở trong học kỳ này.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                        ]),
+                      ));
+                    }
+                    
+                    
+                    Timestamp? dl;
+                    if (availableCourses.isNotEmpty) {
+                      final firstCourse = availableCourses.first.data() as Map<String, dynamic>;
+                      dl = firstCourse['registrationDeadline'] as Timestamp?;
+                    }
+                    
+                    final isExpired = dl != null && dl.toDate().isBefore(DateTime.now());
+                    
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (dl != null)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 16),
+                            child: Row(
+                              children: [
+                                Icon(Icons.timer, color: isExpired ? Colors.redAccent : Colors.orange, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Hạn đăng ký: ${dl.toDate().day}/${dl.toDate().month}/${dl.toDate().year} ${dl.toDate().hour.toString().padLeft(2, '0')}:${dl.toDate().minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(color: isExpired ? Colors.redAccent : Colors.orange, fontWeight: FontWeight.bold),
+                                ),
+                                if (isExpired)
+                                  const Padding(
+                                    padding: EdgeInsets.only(left: 8.0),
+                                    child: Text('(Đã hết hạn)', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                  )
+                              ],
+                            ),
+                          ),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.02),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.white.withOpacity(0.1)),
+                          ),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: DataTable(
+                          headingRowColor: WidgetStateProperty.all(Colors.white.withOpacity(0.05)),
+                          dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                          columnSpacing: 24,
+                          columns: const [
+                            DataColumn(label: Text('Mã Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Tên Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('TC', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Nhóm', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Giảng viên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Lịch học', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Sĩ số', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                            DataColumn(label: Text('Đăng ký', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                          ],
+                          rows: availableCourses.map((doc) {
+                            final d = doc.data() as Map<String, dynamic>;
+                            final isRegistered = _regService.isAlreadyRegistered(doc.id, myRegs);
+                            
+                            final dayOfWeek = d['dayOfWeek'] as int? ?? 2;
+                            final startHour = (d['startHour'] as num?)?.toDouble() ?? 7.0;
+                            final duration = (d['duration'] as num?)?.toDouble() ?? 2.0;
+                            final isConflict = !isRegistered && _regService.checkTimeConflict(
+                              dayOfWeek: dayOfWeek,
+                              startHour: startHour,
+                              duration: duration,
+                              existingRegistrations: myRegs,
+                            );
+                            
+                            final current = (d['currentSlots'] as num?)?.toInt() ?? 0;
+                            final max = (d['maxSlots'] as num?)?.toInt() ?? 0;
+                            final isFull = current >= max;
+                            
+                            return DataRow(
+                              color: WidgetStateProperty.all(isRegistered ? AppColors.studentColor.withOpacity(0.1) : (isConflict ? Colors.red.withOpacity(0.05) : Colors.transparent)),
+                              cells: [
+                                DataCell(Text(d['courseId'] ?? '', style: TextStyle(color: Colors.blue.shade300, fontWeight: FontWeight.w600))),
+                                DataCell(Text(d['courseName'] ?? '', style: const TextStyle(color: Colors.white))),
+                                DataCell(Text('${d['credits'] ?? ''}', style: const TextStyle(color: Colors.white))),
+                                DataCell(Text(d['classGroup'] ?? '', style: const TextStyle(color: Colors.white70))),
+                                DataCell(Text(d['lecturerName'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                                DataCell(
+                                  Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text('Thứ $dayOfWeek | ${_fmtHour(startHour)}-${_fmtHour(startHour + duration)}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                                      Text('Phòng: ${d['room']}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                    ],
+                                  )
+                                ),
+                                DataCell(Text('$current/$max', style: TextStyle(color: isFull ? Colors.red : Colors.white))),
+                                DataCell(
+                                  isRegistered
+                                    ? const Row(children: [Icon(Icons.check_circle, color: AppColors.studentColor, size: 16), SizedBox(width: 4), Text('Đã ĐK', style: TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold))])
+                                    : (isConflict 
+                                      ? const Text('Trùng lịch', style: TextStyle(color: Colors.redAccent))
+                                      : ElevatedButton(
+                                          onPressed: (isFull || isExpired) ? null : () => _handleRegisterCourse(doc.id, d),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.studentColor, 
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                            minimumSize: const Size(0, 32),
+                                          ),
+                                          child: Text(isExpired ? 'Hết hạn' : (isFull ? 'Hết chỗ' : 'Đăng ký')),
+                                        )
+                                      ),
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ), // End Container
+                  ], // End Column children
+                ); // End Column
+                  },
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRegStep2() {
+    final userId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Kết quả Đăng ký - $_studentRegSemester ($_studentRegYear)', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+            TextButton.icon(
+              onPressed: () => setState(() => _regStep = 1),
+              icon: const Icon(Icons.arrow_back, color: Colors.white70),
+              label: const Text('Quay lại Đăng ký', style: TextStyle(color: Colors.white70)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        
+        StreamBuilder<QuerySnapshot>(
+          stream: _regService.getMyRegistrationsStream(userId, _studentRegSemester, _studentRegYear),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            
+            final myRegs = snapshot.data?.docs ?? [];
+            if (myRegs.isEmpty) {
+              return Center(child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(children: [
+                  Icon(Icons.sentiment_dissatisfied, size: 48, color: Colors.white.withOpacity(0.3)),
+                  const SizedBox(height: 16),
+                  Text('Bạn chưa đăng ký môn nào trong học kỳ này.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => setState(() => _regStep = 1),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.studentColor, foregroundColor: Colors.white),
+                    child: const Text('Đi đến trang Đăng ký'),
+                  ),
+                ]),
+              ));
+            }
+            
+            final totalCredits = myRegs.fold<int>(0, (sum, doc) => sum + (((doc.data() as Map)['credits'] as num?)?.toInt() ?? 0));
+            
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(color: AppColors.studentColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.studentColor.withOpacity(0.3))),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.check_circle, color: AppColors.studentColor, size: 32),
+                      const SizedBox(width: 16),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Đăng ký thành công ${myRegs.length} môn học', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 4),
+                          Text('Tổng số tín chỉ: $totalCredits / 25', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.02),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  ),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowColor: WidgetStateProperty.all(Colors.white.withOpacity(0.05)),
+                      dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                      columns: const [
+                        DataColumn(label: Text('Mã Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Tên Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('TC', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Nhóm', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Giảng viên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Lịch học', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        DataColumn(label: Text('Thao tác', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                      ],
+                      rows: myRegs.map((doc) {
+                        final d = doc.data() as Map<String, dynamic>;
+                        final startHour = (d['startHour'] as num?)?.toDouble() ?? 7.0;
+                        final duration = (d['duration'] as num?)?.toDouble() ?? 2.0;
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(d['courseId'] ?? '', style: TextStyle(color: Colors.blue.shade300, fontWeight: FontWeight.w600))),
+                            DataCell(Text(d['courseName'] ?? '', style: const TextStyle(color: Colors.white))),
+                            DataCell(Text('${d['credits'] ?? ''}', style: const TextStyle(color: Colors.white))),
+                            DataCell(Text(d['classGroup'] ?? '', style: const TextStyle(color: Colors.white70))),
+                            DataCell(Text(d['lecturerName'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                            DataCell(
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Thứ ${d['dayOfWeek']} | ${_fmtHour(startHour)}-${_fmtHour(startHour + duration)}', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                                  Text('Phòng: ${d['room']}', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                ],
+                              )
+                            ),
+                            DataCell(
+                              TextButton.icon(
+                                onPressed: () => _confirmCancelRegistration(doc.id, d['courseDocId'], d['courseName']),
+                                icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 16),
+                                label: const Text('Hủy ĐK', style: TextStyle(color: Colors.redAccent)),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleRegisterCourse(String docId, Map<String, dynamic> courseData) async {
+    try {
+      showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+      
+      final userId = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final studentId = _idController.text.isNotEmpty ? _idController.text : widget.studentId;
+      final studentName = _fullNameController.text.isNotEmpty ? _fullNameController.text : widget.fullName;
+      final studentEmail = _emailController.text.isNotEmpty ? _emailController.text : widget.email;
+
+      courseData['docId'] = docId;
+
+      await _regService.registerCourse(
+        userId: userId,
+        studentId: studentId,
+        studentName: studentName,
+        studentEmail: studentEmail,
+        courseData: courseData,
+      );
+
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đăng ký môn ${courseData['courseName']} thành công!'), backgroundColor: Colors.green));
+    } catch (e) {
+      Navigator.pop(context); // close loading
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+    }
+  }
+
+  void _confirmCancelRegistration(String regId, String courseDocId, String courseName) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: const Text('Xác nhận Hủy', style: TextStyle(color: Colors.white)),
+        content: Text('Bạn có chắc muốn hủy đăng ký môn "$courseName"?', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Không', style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                await _regService.cancelRegistration(regId, courseDocId);
+                Navigator.pop(context); // close loading
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã hủy đăng ký thành công!'), backgroundColor: Colors.green));
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Hủy đăng ký', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildStepDropdown(String step, String hint, List<String> items) {
+  String _fmtHour(double h) {
+    final hr = h.floor();
+    final min = ((h - hr) * 60).round();
+    return '${hr.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildStepDropdown(String step, String hint, List<String> items, String value, ValueChanged<String?> onChanged) {
     return Row(
       children: [
         Container(
@@ -1544,9 +1965,10 @@ class _HomeScreenState extends State<HomeScreen> {
           width: 200,
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
+              value: value,
               hint: Text(hint, style: const TextStyle(color: Colors.black87)),
               items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: Colors.black87)))).toList(),
-              onChanged: (v) {},
+              onChanged: onChanged,
               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54),
             ),
           ),
@@ -2146,6 +2568,183 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  // --- 5: BẢNG ĐIỂM (TRANSCRIPT) ---
+  Widget _buildTranscriptContent() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(bottom: 24),
+          child: Text('Kết quả Học tập', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('registrations')
+                .where('userId', isEqualTo: _idController.text.trim())
+                .where('gradeStatus', isEqualTo: 'admin_published')
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return const Center(child: Text('Chưa có dữ liệu điểm được công bố.', style: TextStyle(color: Colors.white70)));
+              }
+
+              // Nhóm theo Năm học -> Học kỳ
+              // Cấu trúc: Map<String, List<QueryDocumentSnapshot>> (key là 'Học kỳ - Năm học')
+              final Map<String, List<QueryDocumentSnapshot>> semesterMap = {};
+              double totalGpaSum = 0;
+              int totalCredits = 0;
+
+              for (var doc in docs) {
+                final d = doc.data() as Map<String, dynamic>;
+                final sem = d['semester'] ?? '';
+                final year = d['academicYear'] ?? '';
+                final key = '$sem ($year)';
+                
+                if (!semesterMap.containsKey(key)) {
+                  semesterMap[key] = [];
+                }
+                semesterMap[key]!.add(doc);
+
+                final gpa4 = (d['gpa4'] as num?)?.toDouble() ?? 0.0;
+                final credit = (d['credits'] as num?)?.toInt() ?? 0; // fallback
+                totalGpaSum += gpa4 * credit;
+                totalCredits += credit;
+              }
+
+              double cgpa = totalCredits > 0 ? totalGpaSum / totalCredits : 0.0;
+              
+              return Column(
+                children: [
+                  // Tổng quan CGPA
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 24),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [Colors.green.withOpacity(0.8), Colors.teal.withOpacity(0.8)]),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 4))],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildTranscriptStatBox('Điểm TB Tích luỹ (CGPA)', cgpa.toStringAsFixed(2)),
+                        Container(width: 1, height: 40, color: Colors.white30),
+                        _buildTranscriptStatBox('Tổng tín chỉ tích luỹ', '$totalCredits TC'),
+                        Container(width: 1, height: 40, color: Colors.white30),
+                        _buildTranscriptStatBox('Xếp loại', _getAcademicRank(cgpa)),
+                      ],
+                    ),
+                  ),
+
+                  // Chi tiết từng học kỳ
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: semesterMap.length,
+                      itemBuilder: (context, index) {
+                        final key = semesterMap.keys.elementAt(index);
+                        final items = semesterMap[key]!;
+                        
+                        // Tính GPA học kỳ này
+                        double semGpaSum = 0;
+                        int semCredits = 0;
+                        for (var doc in items) {
+                          final d = doc.data() as Map<String, dynamic>;
+                          final g = (d['gpa4'] as num?)?.toDouble() ?? 0.0;
+                          final c = (d['credits'] as num?)?.toInt() ?? 0;
+                          semGpaSum += g * c;
+                          semCredits += c;
+                        }
+                        double semGpa = semCredits > 0 ? semGpaSum / semCredits : 0.0;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 24),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(key, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                    Text('GPA: ${semGpa.toStringAsFixed(2)}  |  TC: $semCredits', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              ),
+                              SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: DataTable(
+                                  headingTextStyle: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
+                                  dataTextStyle: const TextStyle(color: Colors.white),
+                                  columnSpacing: 24,
+                                  columns: const [
+                                    DataColumn(label: Text('Mã MH')),
+                                    DataColumn(label: Text('Tên Môn Học')),
+                                    DataColumn(label: Text('TC')),
+                                    DataColumn(label: Text('CC(10%)')),
+                                    DataColumn(label: Text('GK(20%)')),
+                                    DataColumn(label: Text('CK(70%)')),
+                                    DataColumn(label: Text('Tổng')),
+                                    DataColumn(label: Text('Đ.Chữ')),
+                                  ],
+                                  rows: items.map((doc) {
+                                    final d = doc.data() as Map<String, dynamic>;
+                                    return DataRow(
+                                      cells: [
+                                        DataCell(Text(d['courseId'] ?? '')),
+                                        DataCell(Text(d['courseName'] ?? '')),
+                                        DataCell(Text('${d['credits'] ?? 0}')),
+                                        DataCell(Text('${d['attendanceScore'] ?? '-'}')),
+                                        DataCell(Text('${d['midtermScore'] ?? '-'}')),
+                                        DataCell(Text('${d['finalScore'] ?? '-'}')),
+                                        DataCell(Text('${d['total10'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.lightBlueAccent))),
+                                        DataCell(Text('${d['letterGrade'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.yellow))),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTranscriptStatBox(String label, String value) {
+    return Column(
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        const SizedBox(height: 4),
+        Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  String _getAcademicRank(double cgpa) {
+    if (cgpa >= 3.6) return 'Xuất sắc';
+    if (cgpa >= 3.2) return 'Giỏi';
+    if (cgpa >= 2.5) return 'Khá';
+    if (cgpa >= 2.0) return 'Trung bình';
+    return 'Yếu';
   }
 
 }

@@ -8,7 +8,7 @@
  * See a full list of supported triggers at https://firebase.google.com/docs/functions
  */
 
-import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onDocumentCreated, onDocumentWritten} from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 
@@ -44,5 +44,120 @@ export const onUserRegistered = onDocumentCreated("users/{userId}", async (event
     logger.info(`Successfully verified user ${userId}`);
   } catch (error) {
     logger.error(`Error verifying user ${userId}:`, error);
+  }
+});
+
+// Trigger when a schedule is created or updated
+export const onScheduleUpdated = onDocumentWritten("schedules/{scheduleId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) {
+    logger.log("No data associated with the event");
+    return;
+  }
+
+  const scheduleId = event.params.scheduleId;
+  const beforeData = snapshot.before.data();
+  const afterData = snapshot.after.data();
+
+  if (!afterData) {
+    logger.info(`Schedule deleted: ${scheduleId}`);
+    
+    // Save audit log for deletion
+    await admin.firestore().collection("system_logs").add({
+      action: "DELETE",
+      type: "SCHEDULE",
+      targetId: scheduleId,
+      details: `Lịch học ${scheduleId} đã bị xóa.`,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return;
+  }
+
+  if (!beforeData) {
+    logger.info(`New schedule created: ${scheduleId} (Course: ${afterData.courseName})`);
+  } else {
+    logger.info(`Schedule updated: ${scheduleId} (Course: ${afterData.courseName})`);
+  }
+
+  // Auto-attach a server timestamp
+  const updateData = {
+    serverUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // Prevent infinite loops by only updating if serverUpdatedAt is missing or not a timestamp
+  if (!afterData.serverUpdatedAt) {
+    try {
+      await snapshot.after.ref.set(updateData, { merge: true });
+      
+      // Save an audit log to a separate collection in Firestore
+      await admin.firestore().collection("system_logs").add({
+        action: !beforeData ? "CREATE" : "UPDATE",
+        type: "SCHEDULE",
+        targetId: scheduleId,
+        details: `Lịch học môn ${afterData.courseName} đã được ${!beforeData ? "tạo mới" : "cập nhật"}.`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      logger.info(`Successfully added server timestamp and log for schedule ${scheduleId}`);
+    } catch (error) {
+      logger.error(`Error updating schedule ${scheduleId}:`, error);
+    }
+  }
+});
+
+// Trigger when a notification is created or updated
+export const onNotificationUpdated = onDocumentWritten("notifications/{notificationId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) {
+    logger.log("No data associated with the event");
+    return;
+  }
+
+  const notificationId = event.params.notificationId;
+  const beforeData = snapshot.before.data();
+  const afterData = snapshot.after.data();
+
+  if (!afterData) {
+    logger.info(`Notification deleted: ${notificationId}`);
+    
+    // Save audit log for deletion
+    await admin.firestore().collection("system_logs").add({
+      action: "DELETE",
+      type: "NOTIFICATION",
+      targetId: notificationId,
+      details: `Thông báo ${notificationId} đã bị xóa.`,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return;
+  }
+
+  if (!beforeData) {
+    logger.info(`New notification created: ${notificationId} (Title: ${afterData.title})`);
+  } else {
+    logger.info(`Notification updated: ${notificationId} (Title: ${afterData.title})`);
+  }
+
+  const updateData = {
+    serverUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  // Prevent infinite loops
+  if (!afterData.serverUpdatedAt) {
+    try {
+      await snapshot.after.ref.set(updateData, { merge: true });
+      
+      // Save an audit log to a separate collection in Firestore
+      await admin.firestore().collection("system_logs").add({
+        action: !beforeData ? "CREATE" : "UPDATE",
+        type: "NOTIFICATION",
+        targetId: notificationId,
+        details: `Thông báo "${afterData.title}" đã được ${!beforeData ? "tạo mới" : "cập nhật"}.`,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      logger.info(`Successfully added server timestamp and log for notification ${notificationId}`);
+    } catch (error) {
+      logger.error(`Error updating notification ${notificationId}:`, error);
+    }
   }
 });

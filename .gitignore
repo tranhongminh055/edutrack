@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Heavy/Server files
+sakai.zip
+sakai/
+tomcat/
+elearning-web/node_modules/
+elearning-web/dist/

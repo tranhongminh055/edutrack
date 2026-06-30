@@ -11,6 +11,10 @@ class AppColors {
   static const Color gradientStart = Color(0xFF43A047);
   static const Color gradientEnd = Color(0xFF66BB6A);
 
+  // Blue palette (for new login UI)
+  static const Color primaryBlue = Color(0xFF1C375C);
+  static const Color darkBlue = Color(0xFF112240);
+
   // Background
   static const Color darkBg = Color(0xFF0A1A0F);
   static const Color cardBg = Color(0x33FFFFFF);

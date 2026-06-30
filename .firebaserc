@@ -2,7 +2,18 @@
   "projects": {
     "default": "edu---track"
   },
-  "targets": {},
+  "targets": {
+    "edu---track": {
+      "hosting": {
+        "flutter": [
+          "edu---track"
+        ],
+        "elearning": [
+          "edutrack-elearning"
+        ]
+      }
+    }
+  },
   "etags": {
     "edu---track": {
       "extensionInstances": {}

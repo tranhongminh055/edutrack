@@ -2,9 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/nature_background.dart';
-import '../widgets/glass_container.dart';
-import '../widgets/glass_text_field.dart';
-import '../widgets/gradient_button.dart';
 import '../widgets/role_selector.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,6 +26,8 @@ class _RegisterScreenState extends State<RegisterScreen>
   UserRole? _selectedRole;
   bool _isLoading = false;
   bool _agreeTerms = false;
+  bool _obscureText = true;
+  bool _obscureConfirmText = true;
 
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
@@ -148,41 +147,60 @@ class _RegisterScreenState extends State<RegisterScreen>
       barrierDismissible: false,
       builder: (ctx) => Dialog(
         backgroundColor: Colors.transparent,
-        child: GlassContainer(
+        child: Container(
           padding: const EdgeInsets.all(32),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 30,
+              )
+            ]
+          ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               width: 80, height: 80,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppColors.primaryGreen.withOpacity(0.2),
+                color: AppColors.primaryGreen.withOpacity(0.1),
                 border: Border.all(color: AppColors.primaryGreen, width: 3),
               ),
               child: const Icon(Icons.check_rounded, color: AppColors.primaryGreen, size: 44),
             ),
             const SizedBox(height: 20),
             const Text('Đăng ký thành công!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.primaryBlue)),
             const SizedBox(height: 10),
             Text(
               'Tài khoản ${_selectedRole == UserRole.student ? "sinh viên" : _selectedRole == UserRole.lecturer ? "giảng viên" : "quản trị viên"} đã được tạo',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
+              style: const TextStyle(color: Colors.black54, fontSize: 14),
             ),
             const SizedBox(height: 28),
-            GradientButton(
-              text: 'ĐĂNG NHẬP NGAY',
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => LoginScreen(
-                    registeredName: _nameCtrl.text.trim(),
-                    registeredEmail: _emailCtrl.text.trim(),
-                    registeredId: _idCtrl.text.trim(),
-                    registeredRole: _selectedRole,
-                  )),
-                );
-              },
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => LoginScreen(
+                      registeredName: _nameCtrl.text.trim(),
+                      registeredEmail: _emailCtrl.text.trim(),
+                      registeredId: _idCtrl.text.trim(),
+                      registeredRole: _selectedRole,
+                    )),
+                  );
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryBlue,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('ĐĂNG NHẬP NGAY', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
             ),
           ]),
         ),
@@ -195,162 +213,293 @@ class _RegisterScreenState extends State<RegisterScreen>
     return Scaffold(
       body: NatureBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(children: [
-              const SizedBox(height: 16),
-              _buildHeader(),
-              const SizedBox(height: 24),
-              Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 500),
-                  child: SlideTransition(
-                    position: _slideAnim,
-                    child: FadeTransition(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              physics: const BouncingScrollPhysics(),
+              child: SlideTransition(
+                position: _slideAnim,
+                child: FadeTransition(
                   opacity: _fadeAnim,
-                  child: GlassContainer(
-                    padding: const EdgeInsets.all(24),
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildTitle(),
-                          const SizedBox(height: 24),
-                          _buildRoleLabel(),
-                          const SizedBox(height: 12),
-                          RoleSelector(
-                            selectedRole: _selectedRole,
-                            onRoleChanged: (r) => setState(() => _selectedRole = r),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isDesktop = constraints.maxWidth > 850;
+                      final cardWidth = isDesktop ? 900.0 : 450.0;
+                      
+                      return Container(
+                        width: cardWidth,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 30,
+                              offset: const Offset(0, 15),
+                            )
+                          ],
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: IntrinsicHeight(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (isDesktop) 
+                                Expanded(child: _buildLeftPanel()),
+                              Expanded(child: _buildRightPanel()),
+                            ],
                           ),
-                          const SizedBox(height: 20),
-                          GlassTextField(
-                            hintText: 'Họ và tên',
-                            prefixIcon: Icons.person_outline_rounded,
-                            controller: _nameCtrl,
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Vui lòng nhập họ tên';
-                              if (v.trim().length < 2) return 'Họ tên quá ngắn';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          GlassTextField(
-                            hintText: 'Email',
-                            prefixIcon: Icons.email_outlined,
-                            controller: _emailCtrl,
-                            keyboardType: TextInputType.emailAddress,
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Vui lòng nhập email';
-                              if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
-                                return 'Email không hợp lệ';
-                              }
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          GlassTextField(
-                            hintText: _idHint,
-                            prefixIcon: Icons.badge_outlined,
-                            controller: _idCtrl,
-                            validator: (v) {
-                              if (v == null || v.trim().isEmpty) return 'Vui lòng nhập mã số';
-                              if (!RegExp(r'^\d+$').hasMatch(v.trim())) return 'Mã số chỉ được chứa chữ số';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          GlassTextField(
-                            hintText: 'Mật khẩu',
-                            prefixIcon: Icons.lock_outline_rounded,
-                            isPassword: true,
-                            controller: _passCtrl,
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Vui lòng nhập mật khẩu';
-                              if (v.length < 6) return 'Mật khẩu phải có ít nhất 6 ký tự';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          GlassTextField(
-                            hintText: 'Xác nhận mật khẩu',
-                            prefixIcon: Icons.lock_outline_rounded,
-                            isPassword: true,
-                            controller: _confirmPassCtrl,
-                            validator: (v) {
-                              if (v == null || v.isEmpty) return 'Vui lòng xác nhận mật khẩu';
-                              if (v != _passCtrl.text) return 'Mật khẩu không khớp';
-                              return null;
-                            },
-                          ),
-                          const SizedBox(height: 16),
-                          _buildTermsRow(),
-                          const SizedBox(height: 24),
-                          _buildRegisterBtn(),
-                          const SizedBox(height: 24),
-                          _buildLoginLink(),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 30),
-            ]),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: Row(children: [
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Container(
-            width: 44, height: 44,
+  Widget _buildLeftPanel() {
+    return Container(
+      color: AppColors.primaryBlue,
+      padding: const EdgeInsets.all(40),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Spacer(),
+          const Icon(Icons.school, size: 72, color: Colors.white),
+          const SizedBox(height: 24),
+          const Text('EduTrack', 
+            style: TextStyle(
+              color: Colors.white, 
+              fontSize: 32, 
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            )
+          ),
+          const SizedBox(height: 12),
+          Text('Hệ thống quản lý giáo dục thông minh', 
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.9), 
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            )
+          ),
+          const SizedBox(height: 48),
+          Container(
+            width: 120,
+            height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withOpacity(0.1),
-              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
             ),
-            child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 18),
+            child: Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
+                ),
+                child: Center(
+                  child: Icon(Icons.hub_rounded, size: 40, color: Colors.white.withOpacity(0.7)),
+                ),
+              ),
+            ),
           ),
-        ),
-        const Spacer(),
-        ShaderMask(
-          shaderCallback: (b) => const LinearGradient(
-            colors: [Color(0xFF81C784), Color(0xFF4CAF50)],
-          ).createShader(b),
-          child: const Text('EduTrack',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
-        ),
-        const Spacer(),
-        const SizedBox(width: 44),
-      ]),
+          const Spacer(),
+          Text('Theo dõi tiến độ học tập, quản lý lớp học và kết nối cộng đồng giáo dục', 
+            textAlign: TextAlign.center, 
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.6), 
+              fontSize: 13,
+              height: 1.5,
+            )
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildTitle() {
-    return const Center(
-      child: Column(children: [
-        Text('Tạo Tài Khoản',
-          style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-        SizedBox(height: 8),
-        Text('Đăng ký để bắt đầu',
-          style: TextStyle(fontSize: 14, color: AppColors.textSecondary)),
-      ]),
+  Widget _buildRightPanel() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 48),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Tạo Tài Khoản',
+              style: TextStyle(
+                fontSize: 28, 
+                fontWeight: FontWeight.w800, 
+                color: AppColors.primaryBlue,
+              )
+            ),
+            const SizedBox(height: 8),
+            const Text('Đăng ký để bắt đầu trải nghiệm',
+              style: TextStyle(
+                fontSize: 14, 
+                color: Colors.black54,
+              )
+            ),
+            const SizedBox(height: 24),
+            const Text('Vai trò',
+              style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)
+            ),
+            const SizedBox(height: 10),
+            RoleSelector(
+              selectedRole: _selectedRole,
+              onRoleChanged: (r) => setState(() => _selectedRole = r),
+              isLightMode: true,
+            ),
+            const SizedBox(height: 20),
+            _buildInputField(
+              label: 'Họ và tên',
+              hint: 'Nhập họ và tên',
+              icon: Icons.person_outline_rounded,
+              controller: _nameCtrl,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Vui lòng nhập họ tên';
+                if (v.trim().length < 2) return 'Họ tên quá ngắn';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInputField(
+              label: 'Email',
+              hint: 'Nhập địa chỉ email',
+              icon: Icons.email_outlined,
+              controller: _emailCtrl,
+              keyboardType: TextInputType.emailAddress,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Vui lòng nhập email';
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
+                  return 'Email không hợp lệ';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInputField(
+              label: 'Mã số',
+              hint: _idHint,
+              icon: Icons.badge_outlined,
+              controller: _idCtrl,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) return 'Vui lòng nhập mã số';
+                if (!RegExp(r'^\d+$').hasMatch(v.trim())) return 'Mã số chỉ được chứa chữ số';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInputField(
+              label: 'Mật khẩu',
+              hint: 'Nhập mật khẩu',
+              icon: Icons.lock_outline_rounded,
+              controller: _passCtrl,
+              isPassword: true,
+              isObscure: _obscureText,
+              onToggleObscure: () => setState(() => _obscureText = !_obscureText),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Vui lòng nhập mật khẩu';
+                if (v.length < 6) return 'Mật khẩu phải có ít nhất 6 ký tự';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildInputField(
+              label: 'Xác nhận mật khẩu',
+              hint: 'Nhập lại mật khẩu',
+              icon: Icons.lock_outline_rounded,
+              controller: _confirmPassCtrl,
+              isPassword: true,
+              isObscure: _obscureConfirmText,
+              onToggleObscure: () => setState(() => _obscureConfirmText = !_obscureConfirmText),
+              validator: (v) {
+                if (v == null || v.isEmpty) return 'Vui lòng xác nhận mật khẩu';
+                if (v != _passCtrl.text) return 'Mật khẩu không khớp';
+                return null;
+              },
+            ),
+            const SizedBox(height: 16),
+            _buildTermsRow(),
+            const SizedBox(height: 24),
+            _buildRegisterBtn(),
+            const SizedBox(height: 24),
+            _buildLoginLink(),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildRoleLabel() {
-    return const Text('Bạn là',
-      style: TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.w600));
+  Widget _buildInputField({
+    required String label,
+    required String hint,
+    required IconData icon,
+    required TextEditingController controller,
+    bool isPassword = false,
+    bool isObscure = false,
+    VoidCallback? onToggleObscure,
+    TextInputType? keyboardType,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+          style: const TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600)
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          obscureText: isPassword && isObscure,
+          keyboardType: keyboardType,
+          style: const TextStyle(color: Colors.black87, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
+            prefixIcon: Icon(icon, color: Colors.black45, size: 20),
+            suffixIcon: isPassword 
+                ? IconButton(
+                    icon: Icon(isObscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.black45, size: 20),
+                    onPressed: onToggleObscure,
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.black12, width: 1.5),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Colors.black12, width: 1.5),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.primaryBlue, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.red.shade400, width: 1.5),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: Colors.red.shade400, width: 1.5),
+            ),
+          ),
+          validator: validator,
+        ),
+      ],
+    );
   }
 
   Widget _buildTermsRow() {
@@ -359,23 +508,23 @@ class _RegisterScreenState extends State<RegisterScreen>
       child: Row(children: [
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: 22, height: 22,
+          width: 20, height: 20,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(6),
             border: Border.all(
-              color: _agreeTerms ? AppColors.primaryGreen : Colors.white.withOpacity(0.3), width: 2),
-            color: _agreeTerms ? AppColors.primaryGreen : Colors.transparent,
+              color: _agreeTerms ? AppColors.primaryBlue : Colors.black26, width: 2),
+            color: _agreeTerms ? AppColors.primaryBlue : Colors.white,
           ),
           child: _agreeTerms ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: RichText(text: TextSpan(
+          child: RichText(text: const TextSpan(
             text: 'Tôi đồng ý với ',
-            style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
-            children: const [
+            style: TextStyle(color: Colors.black54, fontSize: 13),
+            children: [
               TextSpan(text: 'Điều khoản sử dụng',
-                style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.w600)),
+                style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.w600)),
             ],
           )),
         ),
@@ -384,14 +533,25 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 
   Widget _buildRegisterBtn() {
-    if (_isLoading) {
-      return Center(child: Container(
-        width: 56, height: 56, padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.primaryGreen.withOpacity(0.2)),
-        child: const CircularProgressIndicator(color: AppColors.primaryGreen, strokeWidth: 3),
-      ));
-    }
-    return GradientButton(text: 'ĐĂNG KÝ', onPressed: _handleRegister, icon: Icons.person_add_rounded);
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _handleRegister,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primaryBlue,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+        ),
+        child: _isLoading
+            ? const SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+              )
+            : const Text('Đăng ký', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+      ),
+    );
   }
 
   Widget _buildLoginLink() {
@@ -404,12 +564,12 @@ class _RegisterScreenState extends State<RegisterScreen>
             transitionDuration: const Duration(milliseconds: 400),
           ),
         ),
-        child: RichText(text: TextSpan(
+        child: RichText(text: const TextSpan(
           text: 'Đã có tài khoản? ',
-          style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14),
-          children: const [
+          style: TextStyle(color: Colors.black54, fontSize: 14),
+          children: [
             TextSpan(text: 'Đăng nhập',
-              style: TextStyle(color: AppColors.primaryGreen, fontWeight: FontWeight.w700)),
+              style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.w700)),
           ],
         )),
       ),
