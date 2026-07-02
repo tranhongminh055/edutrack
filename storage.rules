@@ -1,12 +1,17 @@
 rules_version = '2';
 
-// Craft rules based on data in your Firestore database
-// allow write: if firestore.get(
-//    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
+    // E-Learning resources: cho phép mọi user đọc/ghi do app React không dùng Firebase Auth
+    match /elearning_resources/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.resource.size < 50 * 1024 * 1024;
+    }
+
+    // Các path khác
     match /{allPaths=**} {
-      allow read, write: if false;
+      allow read: if true;
+      allow write: if true;
     }
   }
 }

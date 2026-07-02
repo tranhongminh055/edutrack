@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { X, Plus, Trash2, GripVertical, CheckCircle2 } from 'lucide-react';
+import quizService from '../services/quizService';
+import { X, Plus, Trash2, GripVertical, CheckCircle2, Loader2 } from 'lucide-react';
 
 const FORMAT_OPTIONS = [
   { value: 'multiple_choice', label: 'Trắc nghiệm', desc: 'Câu hỏi có nhiều lựa chọn, chọn đáp án đúng', icon: '◉' },
@@ -9,11 +10,15 @@ const FORMAT_OPTIONS = [
   { value: 'essay', label: 'Tự luận', desc: 'Sinh viên nhập bài viết dài, tự do trình bày', icon: '✍' },
 ];
 
-export default function CreateQuizModal({ courseDocId, onClose }) {
+export default function CreateQuizModal({ courseDocId, userId, onClose }) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [format, setFormat] = useState('multiple_choice');
   const [timeLimitMinutes, setTimeLimitMinutes] = useState(30);
+  const [openDate, setOpenDate] = useState('');
+  const [openTime, setOpenTime] = useState('');
+  const [closeDate, setCloseDate] = useState('');
+  const [closeTime, setCloseTime] = useState('');
   const [questions, setQuestions] = useState([]);
   const [saving, setSaving] = useState(false);
   const [step, setStep] = useState(1); // 1: info, 2: questions
@@ -56,15 +61,29 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
   const handleSave = async () => {
     if (!title.trim() || questions.length === 0) return;
     setSaving(true);
+
+    let openTimestamp = null;
+    if (openDate) {
+      openTimestamp = new Date(`${openDate}T${openTime || '00:00'}`);
+    }
+    let closeTimestamp = null;
+    if (closeDate) {
+      closeTimestamp = new Date(`${closeDate}T${closeTime || '23:59'}`);
+    }
+
     try {
-      await addDoc(collection(db, 'elearning_quizzes'), {
+      // Use centralized quiz service to create quiz (adds createdBy, timestamps)
+      await quizService.createQuiz({
         courseDocId,
+        userId,
         title: title.trim(),
         description: description.trim(),
         format,
         timeLimitMinutes: Number(timeLimitMinutes) || 0,
+        openTime: openTimestamp,
+        closeTime: closeTimestamp,
         questions,
-        createdAt: serverTimestamp(),
+        published: true,
       });
       onClose();
     } catch (err) {
@@ -153,6 +172,49 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
                 />
                 <p className="text-xs text-gray-500 mt-1">Đặt 0 nếu không giới hạn thời gian.</p>
               </div>
+
+              {/* Start & End Dates/Times */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-700/50">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Ngày/Giờ mở đề (Bắt đầu)</label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="date"
+                      value={openDate}
+                      onChange={(e) => setOpenDate(e.target.value)}
+                      onClick={(e) => e.target.showPicker?.()}
+                      className="flex-1 min-w-0 px-4 py-2.5 bg-gray-900/50 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm cursor-pointer"
+                    />
+                    <input
+                      type="time"
+                      value={openTime}
+                      onChange={(e) => setOpenTime(e.target.value)}
+                      onClick={(e) => e.target.showPicker?.()}
+                      className="w-28 px-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Ngày/Giờ đóng đề (Kết thúc)</label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="date"
+                      value={closeDate}
+                      onChange={(e) => setCloseDate(e.target.value)}
+                      onClick={(e) => e.target.showPicker?.()}
+                      className="flex-1 min-w-0 px-4 py-2.5 bg-gray-900/50 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm cursor-pointer"
+                    />
+                    <input
+                      type="time"
+                      value={closeTime}
+                      onChange={(e) => setCloseTime(e.target.value)}
+                      onClick={(e) => e.target.showPicker?.()}
+                      className="w-28 px-3 py-2.5 bg-gray-900/50 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all text-sm cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             /* Step 2: Questions */
@@ -178,7 +240,7 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
                   </div>
 
                   <textarea
-                    value={q.text}
+                    value={q.text || ''}
                     onChange={(e) => updateQuestion(qIndex, 'text', e.target.value)}
                     placeholder="Nhập nội dung câu hỏi..."
                     rows={2}
@@ -186,7 +248,7 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
                   />
 
                   {/* Multiple choice options */}
-                  {format === 'multiple_choice' && (
+                  {format === 'multiple_choice' && q.options && (
                     <div className="mt-4 space-y-2">
                       {q.options.map((opt, oIndex) => (
                         <div key={oIndex} className="flex items-center space-x-3">
@@ -202,7 +264,7 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
                           </button>
                           <input
                             type="text"
-                            value={opt}
+                            value={opt || ''}
                             onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
                             placeholder={`Phương án ${String.fromCharCode(65 + oIndex)}`}
                             className="flex-1 px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
@@ -249,7 +311,7 @@ export default function CreateQuizModal({ courseDocId, onClose }) {
             ) : (
               <button
                 onClick={handleSave}
-                disabled={saving || questions.length === 0 || questions.some(q => !q.text.trim())}
+                disabled={saving || questions.length === 0 || questions.some(q => !(q.text || '').trim())}
                 className="px-6 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors font-medium text-sm shadow-lg shadow-green-900/30 flex items-center space-x-2"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}

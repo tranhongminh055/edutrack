@@ -4,109 +4,280 @@ import { BrowserRouter as Router, useSearchParams } from 'react-router-dom';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import Sidebar from './components/Sidebar';
+import HomeView from './components/HomeView';
+import DashboardView from './components/DashboardView';
+import CalendarView from './components/CalendarView';
+import AnnouncementsView from './components/AnnouncementsView';
+import ResourcesView from './components/ResourcesView';
+import MembershipView from './components/MembershipView';
+import PreferencesView from './components/PreferencesView';
+import AccountView from './components/AccountView';
+import WorksiteSetupView from './components/WorksiteSetupView';
+import AllSitesModal from './components/AllSitesModal';
+import CourseHomeView from './components/CourseHomeView';
 import TestPanel from './components/TestPanel';
-import { BookOpen } from 'lucide-react';
+import SyllabusView from './components/SyllabusView';
+import CourseCalendarView from './components/CourseCalendarView';
+import LessonsView from './components/LessonsView';
+import CourseAnnouncementsView from './components/CourseAnnouncementsView';
+import CourseResourcesView from './components/CourseResourcesView';
+import CourseAssignmentsView from './components/CourseAssignmentsView';
+import GradebookView from './components/GradebookView';
+import StudentRosterView from './components/StudentRosterView';
+import { BookOpen, Loader2 } from 'lucide-react';
 
-function Dashboard() {
+function ELearningApp() {
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('userId');
-  const role = searchParams.get('role'); // 'student' or 'lecturer'
+  const role = searchParams.get('role');
   const email = searchParams.get('email');
 
   const [courses, setCourses] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAllSitesModal, setShowAllSitesModal] = useState(false);
+  const [currentView, setCurrentView] = useState('overview');
 
   useEffect(() => {
-    if (!userId && !email) {
-      setLoading(false);
-      return;
-    }
+    if (!userId && !email) { setLoading(false); return; }
 
-    let q;
     if (role === 'student') {
-      q = query(collection(db, 'registrations'), where('userId', '==', userId));
-    } else {
-      q = query(collection(db, 'registrations'), where('lecturerEmail', '==', email));
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      // Grouping courses by courseDocId since registrations might have multiple students for a lecturer
-      const courseMap = new Map();
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (!courseMap.has(data.courseDocId)) {
-          courseMap.set(data.courseDocId, {
-            docId: data.courseDocId,
-            courseName: data.courseName,
-            courseId: data.courseId,
-            classGroup: data.classGroup,
-            lecturerName: data.lecturerName
-          });
-        }
+      const q = query(collection(db, 'registrations'), where('userId', '==', userId));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const courseMap = new Map();
+        snapshot.docs.forEach(doc => {
+          const data = doc.data();
+          const key = data.courseDocId;
+          if (!courseMap.has(key)) {
+            courseMap.set(key, {
+              docId: data.courseDocId,
+              courseName: data.courseName,
+              courseId: data.courseId,
+              classGroup: data.classGroup,
+              lecturerName: data.lecturerName || '',
+              lecturerEmail: data.lecturerEmail || '',
+              major: data.major || '',
+              semester: data.semester || '',
+              academicYear: data.academicYear || '',
+              dayOfWeek: data.dayOfWeek || 0,
+              startHour: data.startHour || 0,
+              duration: data.duration || 0,
+              room: data.room || '',
+              studentCount: 1,
+            });
+          } else {
+            courseMap.get(key).studentCount += 1;
+          }
+        });
+        setCourses(Array.from(courseMap.values()));
+        setLoading(false);
+      }, (error) => {
+        console.error('Error fetching courses:', error);
+        setLoading(false);
       });
-      setCourses(Array.from(courseMap.values()));
-      setLoading(false);
-    }, (error) => {
-      console.error('Error fetching courses:', error);
-      setLoading(false);
-    });
+      return () => unsubscribe();
+    } else {
+      let activeCourses = [];
+      let activeRegistrations = [];
 
-    return () => unsubscribe();
+      const updateLecturerCourses = () => {
+        const regCounts = {};
+        activeRegistrations.forEach(reg => {
+          const courseDocId = reg.courseDocId;
+          regCounts[courseDocId] = (regCounts[courseDocId] || 0) + 1;
+        });
+
+        const mapped = activeCourses.map(c => ({
+          docId: c.id,
+          courseName: c.courseName,
+          courseId: c.courseId,
+          classGroup: c.classGroup,
+          lecturerName: c.lecturerName || '',
+          lecturerEmail: c.lecturerEmail || '',
+          major: c.major || '',
+          semester: c.semester || '',
+          academicYear: c.academicYear || '',
+          dayOfWeek: c.dayOfWeek || 0,
+          startHour: c.startHour || 0,
+          duration: c.duration || 0,
+          room: c.room || '',
+          studentCount: regCounts[c.id] || 0,
+        }));
+        setCourses(mapped);
+        setLoading(false);
+      };
+
+      const qCourses = query(collection(db, 'available_courses'), where('lecturerEmail', '==', email));
+      const qRegs = query(collection(db, 'registrations'), where('lecturerEmail', '==', email));
+
+      const unsubCourses = onSnapshot(qCourses, (snap) => {
+        activeCourses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        updateLecturerCourses();
+      }, (error) => {
+        console.error('Error fetching lecturer courses:', error);
+        setLoading(false);
+      });
+
+      const unsubRegs = onSnapshot(qRegs, (snap) => {
+        activeRegistrations = snap.docs.map(d => d.data());
+        updateLecturerCourses();
+      }, (error) => {
+        console.error('Error fetching registrations:', error);
+      });
+
+      return () => {
+        unsubCourses();
+        unsubRegs();
+      };
+    }
   }, [userId, role, email]);
+
+  const handleSelectCourse = (course) => {
+    setSelectedCourse(course);
+    setCurrentView('course');
+  };
+
+  const handleNavClick = (viewId) => {
+    // Only clear selectedCourse when navigating to a non-course view
+    if (!viewId.startsWith('course')) {
+      setSelectedCourse(null);
+    }
+    setCurrentView(viewId);
+  };
 
   if (!userId && !email) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white">
-        <div className="text-center p-8 bg-gray-800 rounded-xl shadow-2xl border border-gray-700">
-          <BookOpen className="w-16 h-16 mx-auto mb-4 text-blue-500" />
-          <h1 className="text-2xl font-bold mb-2">Truy cập không hợp lệ</h1>
-          <p className="text-gray-400">Vui lòng truy cập từ ứng dụng EduTrack để sử dụng chức năng này.</p>
+      <div className="invalid-access">
+        <div className="invalid-access-card">
+          <BookOpen style={{width: 56, height: 56, color: '#3b82f6', margin: '0 auto'}} />
+          <h1>Truy cập không hợp lệ</h1>
+          <p>Vui lòng truy cập từ ứng dụng EduTrack để sử dụng chức năng E-Learning.</p>
         </div>
       </div>
     );
   }
 
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="loading-spinner">
+          <Loader2 style={{width: 40, height: 40, color: '#3b82f6'}} />
+          <span>Đang tải dữ liệu...</span>
+        </div>
+      );
+    }
+
+    switch (currentView) {
+      case 'overview':
+        return <HomeView courses={courses} role={role} email={email} onSelectCourse={handleSelectCourse} />;
+      case 'dashboard':
+        return <DashboardView courses={courses} role={role} email={email} onSelectCourse={handleSelectCourse} />;
+      case 'calendar':
+        return <CalendarView courses={courses} />;
+      case 'announcements':
+        return <AnnouncementsView courses={courses} role={role} email={email} />;
+      case 'resources':
+        return <ResourcesView courses={courses} role={role} email={email} />;
+      case 'membership':
+        return <MembershipView courses={courses} role={role} email={email} />;
+      case 'worksite_setup':
+        return <WorksiteSetupView courses={courses} role={role} />;
+      case 'preferences':
+        return <PreferencesView email={email} role={role} />;
+      case 'account':
+        return <AccountView email={email} role={role} />;
+      case 'course':
+      case 'course_home':
+        return selectedCourse ? (
+          <CourseHomeView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_tests':
+        return selectedCourse ? (
+          <TestPanel course={selectedCourse} role={role} userId={userId} email={email} />
+        ) : null;
+      case 'course_syllabus':
+        return selectedCourse ? (
+          <SyllabusView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_calendar':
+        return selectedCourse ? (
+          <CourseCalendarView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_lessons':
+        return selectedCourse ? (
+          <LessonsView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_announcements':
+        return selectedCourse ? (
+          <CourseAnnouncementsView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_resources':
+        return selectedCourse ? (
+          <CourseResourcesView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      case 'course_assignments':
+        return selectedCourse ? (
+          <CourseAssignmentsView course={selectedCourse} role={role} email={email} userId={userId} />
+        ) : null;
+      case 'course_gradebook':
+        return selectedCourse ? (
+          <GradebookView course={selectedCourse} role={role} email={email} userId={userId} />
+        ) : null;
+      case 'course_roster':
+        return selectedCourse ? (
+          <StudentRosterView course={selectedCourse} role={role} email={email} />
+        ) : null;
+      default:
+        return <HomeView courses={courses} role={role} email={email} onSelectCourse={handleSelectCourse} />;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col h-screen overflow-hidden">
-      {/* Top Navigation */}
-      <header className="bg-gray-800/80 backdrop-blur-md border-b border-gray-700 p-4 shrink-0 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg">
-            <BookOpen className="w-6 h-6 text-blue-400" />
+    <div className="app-container">
+      <header className="top-header">
+        <div className="brand" onClick={() => handleNavClick('overview')} style={{ cursor: 'pointer' }}>
+          <div className="brand-icon">
+            <BookOpen style={{width: 20, height: 20, color: 'white'}} />
           </div>
           <div>
-            <h1 className="text-lg font-bold tracking-wide">TEST & QUIZ</h1>
-            <p className="text-xs text-gray-400">Hệ thống Đánh giá Năng lực</p>
+            <div className="brand-name">E-LEARNING</div>
+            <div className="brand-sub">Hệ thống Quản lý Học tập Trực tuyến</div>
           </div>
         </div>
-        <div className="flex items-center space-x-4">
-          <div className={`px-3 py-1 rounded-full text-xs font-medium ${role === 'lecturer' ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-            {role === 'lecturer' ? 'Giảng viên' : 'Sinh viên'}
-          </div>
-          <span className="text-sm font-medium text-gray-300">{email}</span>
+        <div className="user-info">
+          <span className={`role-badge ${role}`}>
+            {role === 'lecturer' ? '👨‍🏫 Giảng viên' : '🎓 Sinh viên'}
+          </span>
+          <span className="user-email">{email}</span>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 flex overflow-hidden">
-        <Sidebar 
-          courses={courses} 
-          selectedCourse={selectedCourse} 
-          onSelectCourse={setSelectedCourse} 
+      <div className="main-layout">
+        <Sidebar
+          courses={courses}
+          selectedCourse={selectedCourse}
+          onSelectCourse={handleSelectCourse}
+          onNavClick={handleNavClick}
+          onViewAllSites={() => setShowAllSitesModal(true)}
+          currentView={currentView}
           loading={loading}
+          role={role}
         />
-        <div className="flex-1 flex flex-col bg-gray-900/50 relative">
-          {selectedCourse ? (
-            <TestPanel course={selectedCourse} role={role} userId={userId} email={email} />
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-gray-500">
-              <BookOpen className="w-20 h-20 mb-4 opacity-20" />
-              <p className="text-lg">Chọn một môn học bên trái để xem bài kiểm tra</p>
-            </div>
-          )}
+        <div className="content-area custom-scrollbar">
+          {renderContent()}
         </div>
-      </main>
+      </div>
+      
+      {showAllSitesModal && (
+        <AllSitesModal 
+          courses={courses}
+          onClose={() => setShowAllSitesModal(false)}
+          onSelectCourse={(c) => {
+            handleSelectCourse(c);
+            if (!c) handleNavClick('overview');
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -114,7 +285,7 @@ function Dashboard() {
 function App() {
   return (
     <Router>
-      <Dashboard />
+      <ELearningApp />
     </Router>
   );
 }

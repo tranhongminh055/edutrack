@@ -116,6 +116,7 @@ class CourseRegistrationService {
         'courseDocId': courseDocId,
         'courseId': data['courseId'],
         'courseName': data['courseName'],
+        'major': data['major'] ?? '',
         'credits': data['credits'],
         'classGroup': data['classGroup'],
         'lecturerName': data['lecturerName'],

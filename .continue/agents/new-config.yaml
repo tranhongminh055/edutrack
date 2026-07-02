@@ -1,0 +1,11 @@
+name: EduTrack AI
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Gemini Flash
+    provider: google
+    model: gemini-2.0-flash
+    apiKey: AIzaSyCygLysQwiTu1UR7G5UkGmLxNMF3OBAGMI
+
+mcpServers: []

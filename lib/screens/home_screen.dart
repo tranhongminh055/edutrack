@@ -83,7 +83,6 @@ class _HomeScreenState extends State<HomeScreen> {
     'Tin tức & Thông báo',
     'Lịch',
     'Học tập',
-    'Bảng điểm (Transcript)',
     'Cố vấn Học tập',
     'Đánh giá & Khảo sát',
     'Học phí',
@@ -91,7 +90,6 @@ class _HomeScreenState extends State<HomeScreen> {
     'Phần mềm',
     'Sổ tay Sinh viên',
     'Đăng ký Cấp Giấy xác nhận',
-    'E-Learning (Test & Quiz)',
   ];
 
   @override
@@ -608,15 +606,13 @@ class _HomeScreenState extends State<HomeScreen> {
       case 2: return _buildNewsContent();
       case 3: return _buildScheduleContent();
       case 4: return _buildStudyContent();
-      case 5: return _buildTranscriptContent();
-      case 6: return _buildAdvisorContent();
-      case 7: return _buildSurveyContent();
-      case 8: return _buildTuitionContent();
-      case 9: return _buildLibraryContent();
-      case 10: return _buildSoftwareContent();
-      case 11: return _buildHandbookContent();
-      case 12: return _buildCertificateContent();
-      case 13: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
+      case 5: return _buildAdvisorContent();
+      case 6: return _buildSurveyContent();
+      case 7: return _buildTuitionContent();
+      case 8: return _buildLibraryContent();
+      case 9: return _buildSoftwareContent();
+      case 10: return _buildHandbookContent();
+      case 11: return _buildCertificateContent();
       case 999: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
       default: return _buildRulesContent();
     }
@@ -1979,16 +1975,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 4.2 Bảng điểm
   Widget _buildGradesTable() {
-    if (widget.studentId.isEmpty) {
-      return const Center(child: Text('Không tìm thấy Mã số sinh viên.', style: TextStyle(color: Colors.white54)));
-    }
-
-    return StreamBuilder<DocumentSnapshot>(
-      stream: FirebaseFirestore.instance.collection('student_grades').doc(widget.studentId).snapshots(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('registrations')
+          .where('userId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+          .snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
+        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
+        }
         
-        if (!snapshot.hasData || !snapshot.data!.exists) {
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1997,14 +1995,55 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 16),
                 const Text('Chưa có dữ liệu bảng điểm.', style: TextStyle(color: Colors.white70, fontSize: 16)),
                 const SizedBox(height: 8),
-                Text('Dữ liệu sẽ được Quản trị viên cập nhật sau.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                Text('Đăng ký môn học để bắt đầu học và cập nhật điểm số.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
               ],
             ),
           );
         }
 
-        final data = snapshot.data!.data() as Map<String, dynamic>;
-        final semesters = data['semesters'] as List<dynamic>? ?? [];
+        // Group by Semester + Year
+        final Map<String, List<Map<String, dynamic>>> grouped = {};
+        for (var doc in docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final semester = d['semester'] ?? '';
+          final year = d['academicYear'] ?? '';
+          final key = '$semester - Năm học $year';
+          if (!grouped.containsKey(key)) {
+            grouped[key] = [];
+          }
+          grouped[key]!.add(d);
+        }
+
+        // Sort semesters chronologically
+        final sortedKeys = grouped.keys.toList()..sort((a, b) {
+          final regYear = RegExp(r'Năm học (\d{4})-\d{4}');
+          final regSem = RegExp(r'Học kỳ (\d|Hè)');
+          
+          final matchA_Year = regYear.firstMatch(a);
+          final matchB_Year = regYear.firstMatch(b);
+          
+          if (matchA_Year != null && matchB_Year != null) {
+            final yearA = int.parse(matchA_Year.group(1)!);
+            final yearB = int.parse(matchB_Year.group(1)!);
+            if (yearA != yearB) {
+              return yearA.compareTo(yearB);
+            }
+          }
+          
+          final matchA_Sem = regSem.firstMatch(a);
+          final matchB_Sem = regSem.firstMatch(b);
+          
+          if (matchA_Sem != null && matchB_Sem != null) {
+            final semAStr = matchA_Sem.group(1)!;
+            final semBStr = matchB_Sem.group(1)!;
+            
+            final semA = semAStr == 'Hè' ? 3 : int.parse(semAStr);
+            final semB = semBStr == 'Hè' ? 3 : int.parse(semBStr);
+            return semA.compareTo(semB);
+          }
+          
+          return a.compareTo(b);
+        });
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(32),
@@ -2013,19 +2052,45 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildScreenHeader(Icons.grade, 'BẢNG ĐIỂM SINH VIÊN'),
               const SizedBox(height: 16),
-              Text('Sinh viên: ${widget.fullName} (Mã Sinh viên: ${widget.studentId})', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold, fontSize: 16)),
+              Text(
+                'Sinh viên: ${widget.fullName.isNotEmpty ? widget.fullName : _fullNameController.text} (Mã Sinh viên: ${widget.studentId.isNotEmpty ? widget.studentId : _idController.text})',
+                style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
               const SizedBox(height: 24),
-              ...semesters.map((s) => _buildSemesterGrades(s as Map<String, dynamic>)),
+              ...sortedKeys.map((key) {
+                final courses = grouped[key]!;
+                return _buildSemesterGradesFromRegistrations(key, courses);
+              }),
             ],
           ),
         );
-      }
+      },
     );
   }
 
-  Widget _buildSemesterGrades(Map<String, dynamic> semesterData) {
-    final title = semesterData['semesterName'] ?? 'Học kỳ';
-    final courses = semesterData['courses'] as List<dynamic>? ?? [];
+  Widget _buildSemesterGradesFromRegistrations(String semesterName, List<Map<String, dynamic>> courses) {
+    int semCredits = 0;
+    double total10Sum = 0;
+    double gpa4Sum = 0;
+    int gradedCredits = 0;
+
+    for (var course in courses) {
+      final credit = (course['credits'] as num?)?.toInt() ?? 0;
+      semCredits += credit;
+      
+      if (course['gradeStatus'] == 'admin_published') {
+        final grade10 = (course['total10'] as num?)?.toDouble();
+        final grade4 = (course['gpa4'] as num?)?.toDouble();
+        if (grade10 != null && grade4 != null) {
+          total10Sum += grade10 * credit;
+          gpa4Sum += grade4 * credit;
+          gradedCredits += credit;
+        }
+      }
+    }
+
+    double avg10 = gradedCredits > 0 ? total10Sum / gradedCredits : 0.0;
+    double avg4 = gradedCredits > 0 ? gpa4Sum / gradedCredits : 0.0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 32),
@@ -2043,7 +2108,7 @@ class _HomeScreenState extends State<HomeScreen> {
               color: AppColors.studentColor.withOpacity(0.2),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
             ),
-            child: Text(title, style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold, fontSize: 15)),
+            child: Text(semesterName, style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold, fontSize: 15)),
           ),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -2061,37 +2126,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 DataColumn(label: Text('Điểm chữ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
                 DataColumn(label: Text('Điểm Quy đổi', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
               ],
-              rows: courses.map((c) {
-                final course = c as Map<String, dynamic>;
+              rows: courses.map((course) {
+                final isPublished = course['gradeStatus'] == 'admin_published';
                 return DataRow(cells: [
                   DataCell(Text(course['courseId'] ?? '', style: const TextStyle(color: Colors.white))),
-                  DataCell(Text(course['classId'] ?? '', style: const TextStyle(color: Colors.white))),
-                  DataCell(Text(course['type'] ?? '', style: const TextStyle(color: Colors.white))),
+                  DataCell(Text(course['classGroup'] ?? '', style: const TextStyle(color: Colors.white))),
+                  DataCell(Text(course['type'] ?? 'LEC', style: const TextStyle(color: Colors.white))),
                   DataCell(Text(course['courseName'] ?? '', style: const TextStyle(color: Colors.white))),
                   DataCell(Text('${course['credits'] ?? ''}', style: const TextStyle(color: Colors.white))),
-                  DataCell(Text('${course['grade10'] ?? ''}', style: const TextStyle(color: Colors.white))),
-                  DataCell(Text(course['gradeChar'] ?? '', style: const TextStyle(color: Colors.white))),
-                  DataCell(Text('${course['grade4'] ?? ''}', style: const TextStyle(color: Colors.white))),
+                  DataCell(Text(isPublished ? '${course['total10'] ?? ''}' : '-', style: const TextStyle(color: Colors.white))),
+                  DataCell(Text(isPublished ? (course['letterGrade'] ?? '') : '-', style: const TextStyle(color: Colors.white))),
+                  DataCell(Text(isPublished ? '${course['gpa4'] ?? ''}' : '-', style: const TextStyle(color: Colors.white))),
                 ]);
               }).toList(),
             ),
           ),
           // Summary Footer
-          if (semesterData['summary'] != null)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1)))),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('Tổng số ĐVHT: ${semesterData['summary']['totalCredits'] ?? 0}', style: const TextStyle(color: Colors.white70)),
-                  const SizedBox(height: 4),
-                  Text('Trung bình Điểm gốc: ${semesterData['summary']['avg10'] ?? 0.0}', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text('Điểm Trung bình Tích lũy: ${semesterData['summary']['avg4'] ?? 0.0}', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold)),
-                ],
-              ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1)))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text('Tổng số ĐVHT: $semCredits', style: const TextStyle(color: Colors.white70)),
+                const SizedBox(height: 4),
+                Text('Trung bình Điểm gốc: ${avg10.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text('Điểm Trung bình Tích lũy: ${avg4.toStringAsFixed(2)}', style: const TextStyle(color: AppColors.studentColor, fontWeight: FontWeight.bold)),
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -2570,181 +2634,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- 5: BẢNG ĐIỂM (TRANSCRIPT) ---
-  Widget _buildTranscriptContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 24),
-          child: Text('Kết quả Học tập', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-        ),
-        Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('registrations')
-                .where('userId', isEqualTo: _idController.text.trim())
-                .where('gradeStatus', isEqualTo: 'admin_published')
-                .snapshots(),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
 
-              final docs = snapshot.data?.docs ?? [];
-              if (docs.isEmpty) {
-                return const Center(child: Text('Chưa có dữ liệu điểm được công bố.', style: TextStyle(color: Colors.white70)));
-              }
-
-              // Nhóm theo Năm học -> Học kỳ
-              // Cấu trúc: Map<String, List<QueryDocumentSnapshot>> (key là 'Học kỳ - Năm học')
-              final Map<String, List<QueryDocumentSnapshot>> semesterMap = {};
-              double totalGpaSum = 0;
-              int totalCredits = 0;
-
-              for (var doc in docs) {
-                final d = doc.data() as Map<String, dynamic>;
-                final sem = d['semester'] ?? '';
-                final year = d['academicYear'] ?? '';
-                final key = '$sem ($year)';
-                
-                if (!semesterMap.containsKey(key)) {
-                  semesterMap[key] = [];
-                }
-                semesterMap[key]!.add(doc);
-
-                final gpa4 = (d['gpa4'] as num?)?.toDouble() ?? 0.0;
-                final credit = (d['credits'] as num?)?.toInt() ?? 0; // fallback
-                totalGpaSum += gpa4 * credit;
-                totalCredits += credit;
-              }
-
-              double cgpa = totalCredits > 0 ? totalGpaSum / totalCredits : 0.0;
-              
-              return Column(
-                children: [
-                  // Tổng quan CGPA
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 24),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [Colors.green.withOpacity(0.8), Colors.teal.withOpacity(0.8)]),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 10, offset: const Offset(0, 4))],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildTranscriptStatBox('Điểm TB Tích luỹ (CGPA)', cgpa.toStringAsFixed(2)),
-                        Container(width: 1, height: 40, color: Colors.white30),
-                        _buildTranscriptStatBox('Tổng tín chỉ tích luỹ', '$totalCredits TC'),
-                        Container(width: 1, height: 40, color: Colors.white30),
-                        _buildTranscriptStatBox('Xếp loại', _getAcademicRank(cgpa)),
-                      ],
-                    ),
-                  ),
-
-                  // Chi tiết từng học kỳ
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: semesterMap.length,
-                      itemBuilder: (context, index) {
-                        final key = semesterMap.keys.elementAt(index);
-                        final items = semesterMap[key]!;
-                        
-                        // Tính GPA học kỳ này
-                        double semGpaSum = 0;
-                        int semCredits = 0;
-                        for (var doc in items) {
-                          final d = doc.data() as Map<String, dynamic>;
-                          final g = (d['gpa4'] as num?)?.toDouble() ?? 0.0;
-                          final c = (d['credits'] as num?)?.toInt() ?? 0;
-                          semGpaSum += g * c;
-                          semCredits += c;
-                        }
-                        double semGpa = semCredits > 0 ? semGpaSum / semCredits : 0.0;
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 24),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: const BorderRadius.vertical(top: Radius.circular(16))),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(key, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                                    Text('GPA: ${semGpa.toStringAsFixed(2)}  |  TC: $semCredits', style: const TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  headingTextStyle: const TextStyle(color: Colors.white70, fontWeight: FontWeight.bold),
-                                  dataTextStyle: const TextStyle(color: Colors.white),
-                                  columnSpacing: 24,
-                                  columns: const [
-                                    DataColumn(label: Text('Mã MH')),
-                                    DataColumn(label: Text('Tên Môn Học')),
-                                    DataColumn(label: Text('TC')),
-                                    DataColumn(label: Text('CC(10%)')),
-                                    DataColumn(label: Text('GK(20%)')),
-                                    DataColumn(label: Text('CK(70%)')),
-                                    DataColumn(label: Text('Tổng')),
-                                    DataColumn(label: Text('Đ.Chữ')),
-                                  ],
-                                  rows: items.map((doc) {
-                                    final d = doc.data() as Map<String, dynamic>;
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(Text(d['courseId'] ?? '')),
-                                        DataCell(Text(d['courseName'] ?? '')),
-                                        DataCell(Text('${d['credits'] ?? 0}')),
-                                        DataCell(Text('${d['attendanceScore'] ?? '-'}')),
-                                        DataCell(Text('${d['midtermScore'] ?? '-'}')),
-                                        DataCell(Text('${d['finalScore'] ?? '-'}')),
-                                        DataCell(Text('${d['total10'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.lightBlueAccent))),
-                                        DataCell(Text('${d['letterGrade'] ?? '-'}', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.yellow))),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTranscriptStatBox(String label, String value) {
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-      ],
-    );
-  }
-
-  String _getAcademicRank(double cgpa) {
-    if (cgpa >= 3.6) return 'Xuất sắc';
-    if (cgpa >= 3.2) return 'Giỏi';
-    if (cgpa >= 2.5) return 'Khá';
-    if (cgpa >= 2.0) return 'Trung bình';
-    return 'Yếu';
-  }
 
 }

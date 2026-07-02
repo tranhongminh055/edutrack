@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
@@ -33,6 +34,19 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   String _lecturerRegSemester = 'Học kỳ 1';
   String _lecturerRegYear = '2025-2026';
   String? _selectedGradingCourseDocId;
+  
+  Timer? _timer;
+  DateTime _currentTime = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() {
+        _currentTime = DateTime.now();
+      });
+    });
+  }
 
   final List<Map<String, dynamic>> _menus = [
     {'icon': Icons.dashboard, 'label': 'Tổng quan'},
@@ -41,11 +55,11 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     {'icon': Icons.how_to_reg, 'label': 'SV Đăng ký lớp'},
     {'icon': Icons.assignment, 'label': 'Chấm bài'},
     {'icon': Icons.people, 'label': 'Quản lý SV'},
-    {'icon': Icons.quiz, 'label': 'E-Learning (Test & Quiz)'},
   ];
 
   @override
   void dispose() {
+    _timer?.cancel();
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     super.dispose();
@@ -59,6 +73,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           child: Column(
             children: [
               _buildTopNav(),
+              _buildBanner(),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,34 +92,23 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
 
   Widget _buildTopNav() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       color: Colors.black.withOpacity(0.2),
       child: Row(
         children: [
           const Icon(Icons.school, color: AppColors.lecturerColor, size: 24),
           const SizedBox(width: 8),
           const Text('EduTrack', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: AppColors.lecturerColor.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
-            child: const Text('Giảng viên', style: TextStyle(color: AppColors.lecturerColor, fontSize: 11, fontWeight: FontWeight.bold)),
-          ),
+          const SizedBox(width: 32),
+          _buildTopNavLink(Icons.home, 'Trang chủ', onTap: () => setState(() => _menuIndex = 0)),
+          _buildTopNavLink(Icons.mail, 'Mail'),
+          _buildTopNavLink(Icons.check_circle, 'E-Learning', onTap: () {
+            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}', '_blank');
+          }),
+          _buildTopNavLink(Icons.forum, 'Forum'),
+          _buildTopNavLink(Icons.library_books, 'e-Lib'),
           const Spacer(),
-          GestureDetector(
-            onTap: () {
-              final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-              web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}', '_blank');
-            },
-            child: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white70, size: 16),
-                SizedBox(width: 4),
-                Text('E-Learning', style: TextStyle(color: Colors.white70, fontSize: 14)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 24),
           Text(widget.email, style: const TextStyle(color: Colors.white70, fontSize: 13)),
           const SizedBox(width: 16),
           GestureDetector(
@@ -128,6 +132,111 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTopNavLink(IconData icon, String label, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 16),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getWeekdayName(int weekday) {
+    switch (weekday) {
+      case 1: return 'Thứ hai';
+      case 2: return 'Thứ ba';
+      case 3: return 'Thứ tư';
+      case 4: return 'Thứ năm';
+      case 5: return 'Thứ sáu';
+      case 6: return 'Thứ bảy';
+      case 7: return 'Chủ nhật';
+      default: return '';
+    }
+  }
+
+  Widget _buildBanner() {
+    final hourStr = _currentTime.hour.toString().padLeft(2, '0');
+    final minuteStr = _currentTime.minute.toString().padLeft(2, '0');
+    final secondStr = _currentTime.second.toString().padLeft(2, '0');
+    final dateStr = '${_getWeekdayName(_currentTime.weekday)}, ngày ${_currentTime.day} tháng ${_currentTime.month} năm ${_currentTime.year}';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: GlassContainer(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left: Logo text
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('my', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 24, fontStyle: FontStyle.italic)),
+                const Text('EDUTRACK', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              ],
+            ),
+            
+            // Center: Clock
+            Column(
+              children: [
+                Row(
+                  children: [
+                    _buildTimeBox(hourStr[0]), _buildTimeBox(hourStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
+                    _buildTimeBox(minuteStr[0]), _buildTimeBox(minuteStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
+                    _buildTimeBox(secondStr[0]), _buildTimeBox(secondStr[1]),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(dateStr, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+              ],
+            ),
+            
+            // Right: Quick Links
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildQuickLink(Icons.mail, 'EduTrack Gmail'),
+                const SizedBox(height: 8),
+                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN'),
+                const SizedBox(height: 8),
+                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeBox(String digit) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(digit, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildQuickLink(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, color: AppColors.lecturerColor, size: 16),
+        const SizedBox(width: 8),
+        Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 
@@ -196,13 +305,6 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           3 => _buildStudentRegistrations(),
           4 => _buildGrading(),
           5 => _buildStudentMgmt(),
-          6 => ELearningDashboard(
-                 role: UserRole.lecturer, 
-                 userId: FirebaseAuth.instance.currentUser?.uid ?? '', 
-                 email: widget.email, 
-                 currentSemester: _lecturerRegSemester, 
-                 currentYear: _lecturerRegYear,
-               ),
           999 => ELearningDashboard(
                  role: UserRole.lecturer, 
                  userId: '', 

@@ -1,56 +1,162 @@
 import React from 'react';
-import { Book, ChevronRight, Loader2 } from 'lucide-react';
+import { 
+  Home, LayoutDashboard, Users, Calendar, FolderOpen, Bell, Settings, 
+  UserCircle, ChevronRight, ChevronDown, ChevronLeft, Pin, Clock, Loader2, BookOpen 
+} from 'lucide-react';
 
-export default function Sidebar({ courses, selectedCourse, onSelectCourse, loading }) {
+export default function Sidebar({ courses, selectedCourse, onSelectCourse, onNavClick, onViewAllSites, currentView, loading, role }) {
+  const homeMenuItems = [
+    { icon: <LayoutDashboard size={15} />, label: 'Overview', id: 'overview' },
+    { icon: <Home size={15} />, label: 'Dashboard', id: 'dashboard' },
+    { icon: <Users size={15} />, label: 'Membership', id: 'membership' },
+    { icon: <Calendar size={15} />, label: 'Calendar', id: 'calendar' },
+    { icon: <FolderOpen size={15} />, label: 'Resources', id: 'resources' },
+    { icon: <Bell size={15} />, label: 'Announcements', id: 'announcements' },
+    { icon: <Settings size={15} />, label: 'Worksite Setup', id: 'worksite_setup' },
+    { icon: <UserCircle size={15} />, label: 'Preferences', id: 'preferences' },
+    { icon: <UserCircle size={15} />, label: 'Account', id: 'account' },
+  ];
+
+  const courseMenuItems = [
+    { icon: <LayoutDashboard size={15} />, label: 'Home', id: 'course' },
+    { icon: <BookOpen size={15} />, label: 'Syllabus', id: 'course_syllabus' },
+    { icon: <Calendar size={15} />, label: 'Calendar', id: 'course_calendar' },
+    { icon: <FolderOpen size={15} />, label: 'Lessons', id: 'course_lessons' },
+    { icon: <Bell size={15} />, label: 'Announcements', id: 'course_announcements' },
+    { icon: <FolderOpen size={15} />, label: 'Resources', id: 'course_resources' },
+    { icon: <Settings size={15} />, label: 'Assignments', id: 'course_assignments' },
+    { icon: <Settings size={15} />, label: 'Tests & Quizzes', id: 'course_tests' },
+    { icon: <Settings size={15} />, label: 'Gradebook', id: 'course_gradebook' },
+    ...(role === 'lecturer' ? [{ icon: <Users size={15} />, label: 'Roster', id: 'course_roster' }] : []),
+  ];
+
   return (
-    <div className="w-80 bg-gray-800/50 backdrop-blur-sm border-r border-gray-700/50 flex flex-col h-full z-10 shrink-0">
-      <div className="p-5 border-b border-gray-700/50 bg-gray-800/30">
-        <h2 className="text-sm font-semibold tracking-wider text-gray-400 uppercase">Danh sách Môn học</h2>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center h-40 text-gray-500">
-            <Loader2 className="w-8 h-8 animate-spin mb-3 text-blue-500" />
-            <span className="text-sm">Đang tải dữ liệu...</span>
+    <div className="sidebar custom-scrollbar">
+      {selectedCourse ? (
+        <>
+          {/* Back to Home Button */}
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #2a2d38' }}>
+            <button 
+              onClick={() => onNavClick('overview')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                background: 'none',
+                border: 'none',
+                color: '#60a5fa',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: '600',
+                padding: '4px 0',
+                width: '100%',
+                textAlign: 'left'
+              }}
+            >
+              <ChevronLeft size={14} />
+              <span>Quay lại Trang chủ</span>
+            </button>
           </div>
-        ) : courses.length === 0 ? (
-          <div className="text-center p-6 text-gray-500 bg-gray-800/30 rounded-xl border border-gray-700/50 border-dashed">
-            <p className="text-sm">Chưa có môn học nào.</p>
+
+          {/* Course Menu */}
+          <div className="sakai-section">
+            <button className="sakai-section-header" onClick={() => onNavClick('course')}>
+              <ChevronDown size={14} />
+              <span>{selectedCourse.courseId || selectedCourse.courseName}</span>
+            </button>
+            <div className="sakai-menu">
+              {courseMenuItems.map((item, idx) => (
+                <button
+                  key={item.id + idx}
+                  className={`sakai-menu-item ${currentView === item.id || (item.id === 'course' && currentView === 'course') ? 'active' : ''}`}
+                  onClick={() => onNavClick(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
-        ) : (
-          courses.map((course) => {
-            const isSelected = selectedCourse?.docId === course.docId;
-            return (
-              <button
-                key={course.docId}
-                onClick={() => onSelectCourse(course)}
-                className={`w-full text-left p-4 rounded-xl transition-all duration-200 group relative overflow-hidden ${
-                  isSelected 
-                    ? 'bg-blue-600/20 border-blue-500/50 shadow-lg shadow-blue-900/20' 
-                    : 'bg-gray-800/40 border-transparent hover:bg-gray-700/50 hover:border-gray-600/50'
-                } border`}
-              >
-                {isSelected && (
-                  <div className="absolute inset-y-0 left-0 w-1 bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.8)]" />
-                )}
-                
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 pr-3">
-                    <h3 className={`font-semibold line-clamp-2 leading-tight mb-1.5 transition-colors ${isSelected ? 'text-blue-400' : 'text-gray-200 group-hover:text-white'}`}>
-                      {course.courseName}
-                    </h3>
-                    <div className="flex items-center space-x-2 text-xs text-gray-400">
-                      <span className="px-1.5 py-0.5 rounded bg-gray-700/50 border border-gray-600/50">{course.courseId}</span>
-                      <span className="px-1.5 py-0.5 rounded bg-gray-700/50 border border-gray-600/50">{course.classGroup}</span>
-                    </div>
-                  </div>
-                  <ChevronRight className={`w-5 h-5 transition-transform duration-300 ${isSelected ? 'text-blue-500 translate-x-1' : 'text-gray-600 group-hover:text-gray-400 group-hover:translate-x-0.5'}`} />
-                </div>
-              </button>
-            );
-          })
-        )}
+        </>
+      ) : (
+        <>
+          {/* Home Section */}
+          <div className="sakai-section">
+            <button className="sakai-section-header" onClick={() => onNavClick('overview')}>
+              <ChevronDown size={14} />
+              <span>Home</span>
+            </button>
+            <div className="sakai-menu">
+              {homeMenuItems.map((item, idx) => (
+                <button
+                  key={item.id + idx}
+                  className={`sakai-menu-item ${currentView === item.id ? 'active' : ''}`}
+                  onClick={() => onNavClick(item.id)}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Pinned */}
+          <div className="sakai-divider-section">
+            <div className="sakai-divider-title">
+              <Pin size={12} />
+              <span>Pinned</span>
+            </div>
+            <div className="sakai-empty-text">No pinned sites yet</div>
+          </div>
+
+          {/* Recent / My Courses */}
+          <div className="sakai-divider-section">
+            <div className="sakai-divider-title">
+              <Clock size={12} />
+              <span>Recent</span>
+            </div>
+            
+            {loading ? (
+              <div style={{display: 'flex', justifyContent: 'center', padding: '16px 0'}}>
+                <Loader2 size={20} style={{color: '#3b82f6', animation: 'spin 1s linear infinite'}} />
+              </div>
+            ) : courses.length === 0 ? (
+              <div className="sakai-empty-text">
+                {role === 'student' ? 'Chưa đăng ký môn học.' : 'Chưa có lớp nào.'}
+              </div>
+            ) : (
+              <div className="sakai-course-list">
+                {courses.map((course) => {
+                  const isActive = selectedCourse?.docId === course.docId && currentView === 'course';
+                  return (
+                    <button
+                      key={course.docId}
+                      className={`sakai-course-item ${isActive ? 'active' : ''}`}
+                      onClick={() => onSelectCourse(course)}
+                    >
+                      <ChevronRight size={14} className="sakai-course-arrow" />
+                      <div className="sakai-course-info">
+                        <span className="sakai-course-name">{course.courseName}</span>
+                        <span className="sakai-course-meta">({course.classGroup})</span>
+                      </div>
+                      <span className="sakai-pin-btn" title="Pin">
+                        <Pin size={12} />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <div style={{ flex: 1 }}></div>
+
+      {/* View all */}
+      <div className="sakai-view-all" onClick={onViewAllSites} style={{ marginTop: 'auto' }}>
+        <BookOpen size={14} />
+        <span>View all my sites</span>
       </div>
     </div>
   );
