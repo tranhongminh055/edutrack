@@ -35,7 +35,7 @@ class _GlassTextFieldState extends State<GlassTextField> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _isFocused
-              ? AppColors.primaryGreen.withOpacity(0.8)
+              ? AppColors.primaryGreen.withValues(alpha: 0.8)
               : AppColors.inputBorder,
           width: _isFocused ? 2 : 1.5,
         ),
@@ -43,7 +43,7 @@ class _GlassTextFieldState extends State<GlassTextField> {
         boxShadow: _isFocused
             ? [
                 BoxShadow(
-                  color: AppColors.primaryGreen.withOpacity(0.15),
+                  color: AppColors.primaryGreen.withValues(alpha: 0.15),
                   blurRadius: 15,
                   spreadRadius: 1,
                 ),

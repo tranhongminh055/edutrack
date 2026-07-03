@@ -64,11 +64,19 @@ export default function CreateQuizModal({ courseDocId, userId, onClose }) {
 
     let openTimestamp = null;
     if (openDate) {
-      openTimestamp = new Date(`${openDate}T${openTime || '00:00'}`);
+      // Parse date and time in local timezone, store as UTC timestamp
+      const [year, month, day] = openDate.split('-').map(Number);
+      const [hours, minutes] = (openTime || '00:00').split(':').map(Number);
+      const localDate = new Date(year, month - 1, day, hours, minutes);
+      openTimestamp = localDate.getTime(); // Store as milliseconds since epoch
     }
     let closeTimestamp = null;
     if (closeDate) {
-      closeTimestamp = new Date(`${closeDate}T${closeTime || '23:59'}`);
+      // Parse date and time in local timezone, store as UTC timestamp
+      const [year, month, day] = closeDate.split('-').map(Number);
+      const [hours, minutes] = (closeTime || '23:59').split(':').map(Number);
+      const localDate = new Date(year, month - 1, day, hours, minutes);
+      closeTimestamp = localDate.getTime(); // Store as milliseconds since epoch
     }
 
     try {

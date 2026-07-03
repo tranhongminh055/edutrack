@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, getDocs, getDoc } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../firebase';
+import { syncQuizGradesToGradebook } from '../services/quizService';
 import { ChevronRight, Plus, Trash2, Edit3, Loader2, Save, CheckCircle, X, FileSignature, Clock, Upload, List, FileText, Download, MessageSquare, AlertTriangle, Cpu, Brain, Check, RefreshCw, Calendar } from 'lucide-react';
 
 export default function CourseAssignmentsView({ course, role, email, userId }) {
@@ -358,144 +359,9 @@ Nhiệm vụ của bạn:
   };
 
   // Sync grades to registrations & EduTrack student_grades/{studentId}
-  const syncGradesToAllGradebooks = async (studentEmail, targetScore) => {
-    try {
-      // Find registration matching studentEmail & courseDocId
-      const qReg = query(collection(db, 'registrations'), where('courseDocId', '==', course.docId), where('studentEmail', '==', studentEmail));
-      const regSnap = await getDocs(qReg);
-      if (regSnap.empty) return;
-      const regDoc = regSnap.docs[0];
-      const regData = regDoc.data();
-      const studentId = regData.studentId;
-
-      // Calculate new assignments average
-      // Fetch all submissions for this student in this course
-      const qSubs = query(collection(db, 'elearning_submissions'), where('courseDocId', '==', course.docId), where('userEmail', '==', studentEmail));
-      const subsSnap = await getDocs(qSubs);
-
-      let totalPtsScored = 0;
-      let totalMaxPts = 0;
-      let count = 0;
-
-      // Map assignments to access their max points
-      const assignsMap = {};
-      assignments.forEach(a => { assignsMap[a.id] = a.points || 10; });
-
-      subsSnap.forEach(d => {
-        const subData = d.data();
-        const maxPts = assignsMap[subData.assignmentId] || 10;
-        // Use the newly graded score if it corresponds to current assignment, to bypass Firestore async write delay
-        const subScore = subData.assignmentId === viewSubmissionsAssignment.id ? targetScore : subData.score;
-
-        if (subScore !== undefined && subScore !== null) {
-          totalPtsScored += (subScore / maxPts) * 10; // normalize to scale of 10
-          count++;
-        }
-      });
-
-      // If no assignments graded, default to 10 for attendance
-      const avgAssignmentScore = count > 0 ? parseFloat((totalPtsScored / count).toFixed(1)) : 10;
-
-      // Update E-learning overall grade. In this system:
-      // - Attendance Score (10%) is mapped to the assignments average
-      // - Midterm (20%)
-      // - Final (70%)
-      const att = avgAssignmentScore;
-      const mid = regData.midtermScore !== undefined ? Number(regData.midtermScore) : 8.0;
-      const fin = regData.finalScore !== undefined ? Number(regData.finalScore) : 8.0;
-
-      const newTotal10 = parseFloat(((att * 0.1) + (mid * 0.2) + (fin * 0.7)).toFixed(1));
-
-      const getLetterGrade = (total) => {
-        if (total >= 8.5) return 'A';
-        if (total >= 7.0) return 'B';
-        if (total >= 5.5) return 'C';
-        if (total >= 4.0) return 'D';
-        return 'F';
-      };
-
-      const getGPA4 = (letter) => {
-        if (letter === 'A') return 4.0;
-        if (letter === 'B') return 3.0;
-        if (letter === 'C') return 2.0;
-        if (letter === 'D') return 1.0;
-        return 0.0;
-      };
-
-      const letterGrade = getLetterGrade(newTotal10);
-      const gpa4 = getGPA4(letterGrade);
-
-      // Update registrations
-      await updateDoc(doc(db, 'registrations', regDoc.id), {
-        attendanceScore: att,
-        total10: newTotal10,
-        letterGrade,
-        gpa4,
-        gradeStatus: 'admin_published'
-      });
-
-      // Push to EduTrack: student_grades/{studentId}
-      if (studentId) {
-        const studentGradesRef = doc(db, 'student_grades', studentId);
-        const studentGradesSnap = await getDoc(studentGradesRef);
-        if (studentGradesSnap.exists()) {
-          const sgData = studentGradesSnap.data();
-          let semesters = sgData.semesters || [];
-          let docUpdated = false;
-
-          semesters = semesters.map(sem => {
-            let courses = sem.courses || [];
-            let courseUpdated = false;
-
-            courses = courses.map(c => {
-              if (c.courseId === course.courseId) {
-                courseUpdated = true;
-                docUpdated = true;
-                return {
-                  ...c,
-                  grade10: newTotal10,
-                  gradeChar: letterGrade,
-                  grade4: gpa4
-                };
-              }
-              return c;
-            });
-
-            if (courseUpdated) {
-              // Recalculate summary totals
-              let totalCredits = 0;
-              let sum10 = 0;
-              let sum4 = 0;
-              courses.forEach(c => {
-                const creds = Number(c.credits || 0);
-                totalCredits += creds;
-                sum10 += Number(c.grade10 || 0) * creds;
-                sum4 += Number(c.grade4 || 0) * creds;
-              });
-              const avg10 = totalCredits > 0 ? parseFloat((sum10 / totalCredits).toFixed(2)) : 0;
-              const avg4 = totalCredits > 0 ? parseFloat((sum4 / totalCredits).toFixed(2)) : 0;
-
-              return {
-                ...sem,
-                courses,
-                summary: {
-                  totalCredits,
-                  avg10,
-                  avg4
-                }
-              };
-            }
-            return sem;
-          });
-
-          if (docUpdated) {
-            await updateDoc(studentGradesRef, { semesters });
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Sync to gradebooks failed:", err);
-    }
+  // Delegates to the unified syncQuizGradesToGradebook which aggregates both assignments + quizzes
+  const syncGradesToAllGradebooks = async (studentEmail, _targetScore) => {
+    await syncQuizGradesToGradebook(studentEmail, course.docId);
   };
 
   const handleAIScore = async (submission) => {

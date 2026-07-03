@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import '../theme/app_colors.dart';
@@ -44,9 +45,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     {'icon': Icons.history, 'label': 'Thông báo đã gửi'},
     {'icon': Icons.calendar_today, 'label': 'Quản lý lịch học'},
     {'icon': Icons.verified, 'label': 'Phê duyệt Bảng điểm'},
-    {'icon': Icons.people, 'label': 'Quản lý SV'},
+    {'icon': Icons.login, 'label': 'Quản lý đăng nhập'},
     {'icon': Icons.app_registration, 'label': 'Quản lý môn ĐK'},
     {'icon': Icons.analytics, 'label': 'Theo dõi ĐK'},
+    {'icon': Icons.support_agent, 'label': 'Phê duyệt đổi Cố vấn'},
   ];
 
   @override
@@ -83,7 +85,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _buildTopNav() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-      color: Colors.black.withOpacity(0.2),
+      color: Colors.black.withValues(alpha: 0.2),
       child: Row(
         children: [
           const Icon(Icons.school, color: AppColors.adminColor, size: 24),
@@ -92,7 +94,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: AppColors.adminColor.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: AppColors.adminColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
             child: const Text('Quản trị viên', style: TextStyle(color: AppColors.adminColor, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
           const Spacer(),
@@ -109,7 +111,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: Colors.red.withOpacity(0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withOpacity(0.3))),
+              decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withValues(alpha: 0.3))),
               child: const Row(children: [
                 Icon(Icons.logout, color: Colors.redAccent, size: 14),
                 SizedBox(width: 4),
@@ -132,13 +134,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.adminColor.withOpacity(0.3),
+                color: AppColors.adminColor.withValues(alpha: 0.3),
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
               ),
               child: Row(children: [
                 Container(
                   width: 40, height: 40,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.adminColor.withOpacity(0.3)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.adminColor.withValues(alpha: 0.3)),
                   child: const Icon(Icons.person, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
@@ -157,7 +159,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: sel ? Colors.white.withOpacity(0.1) : Colors.transparent,
+                        color: sel ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
                         border: Border(left: sel ? const BorderSide(color: AppColors.adminColor, width: 4) : BorderSide.none),
                       ),
                       child: Row(children: [
@@ -189,6 +191,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           5 => _buildStudentMgmt(),
           6 => _buildCourseManagement(),
           7 => _buildRegistrationTracking(),
+          8 => _buildAdvisorChangeApproval(),
           _ => const Center(child: Text('Chức năng đang phát triển', style: TextStyle(color: Colors.white))),
         },
       ),
@@ -229,13 +232,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _statCard(String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
         Icon(icon, color: color, size: 32),
         const SizedBox(height: 12),
         Text(value, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
       ]),
     );
   }
@@ -244,16 +247,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), border: Border(left: BorderSide(color: c, width: 4)), borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8))),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), border: Border(left: BorderSide(color: c, width: 4)), borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8))),
       child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(subj, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(room, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+          Text(room, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(color: c.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: c.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
           child: Text(time, style: TextStyle(color: c, fontWeight: FontWeight.bold, fontSize: 12)),
         ),
       ]),
@@ -271,7 +274,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Text('GỬI THÔNG BÁO MỚI', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
         ]),
         const SizedBox(height: 8),
-        Text('Thông báo sẽ được hiển thị trên trang Sinh viên trong mục "Tin tức & Thông báo"', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+        Text('Thông báo sẽ được hiển thị trên trang Sinh viên trong mục "Tin tức & Thông báo"', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
         const SizedBox(height: 28),
 
         // Title
@@ -282,10 +285,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'VD: Thông báo lịch kiểm tra giữa kỳ',
-            hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-            filled: true, fillColor: Colors.white.withOpacity(0.08),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.adminColor, width: 2)),
             prefixIcon: const Icon(Icons.title, color: AppColors.adminColor),
           ),
@@ -301,10 +304,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           maxLines: 5,
           decoration: InputDecoration(
             hintText: 'Nhập nội dung chi tiết thông báo...',
-            hintStyle: TextStyle(color: Colors.white.withOpacity(0.3)),
-            filled: true, fillColor: Colors.white.withOpacity(0.08),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.2))),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+            filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.2))),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15))),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.adminColor, width: 2)),
           ),
         ),
@@ -335,9 +338,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.15),
+              color: Colors.green.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green.withOpacity(0.4)),
+              border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
             ),
             child: Row(children: [
               const Icon(Icons.check_circle, color: Colors.green, size: 24),
@@ -345,7 +348,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text('Gửi thông báo thành công!', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                Text('Thông báo đã xuất hiện trên trang Sinh viên.', style: TextStyle(color: Colors.green.withOpacity(0.7), fontSize: 12)),
+                Text('Thông báo đã xuất hiện trên trang Sinh viên.', style: TextStyle(color: Colors.green.withValues(alpha: 0.7), fontSize: 12)),
               ])),
             ]),
           ),
@@ -397,21 +400,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
             const SizedBox(height: 24),
             if (sent.isEmpty)
               Center(child: Padding(padding: const EdgeInsets.all(48), child: Column(children: [
-                Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
+                Icon(Icons.inbox, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                 const SizedBox(height: 16),
-                Text('Chưa gửi thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                Text('Chưa gửi thông báo nào', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
               ]))),
             ...sent.map((n) => Container(
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.adminColor.withOpacity(0.2))),
+              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.adminColor.withValues(alpha: 0.2))),
               child: Row(children: [
                 const Icon(Icons.campaign, color: AppColors.adminColor),
                 const SizedBox(width: 16),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(n.title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 4),
-                  Text(n.date, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                  Text(n.date, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                 ])),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
@@ -459,7 +462,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ],
               ),
               const SizedBox(height: 8),
-              Text('Tải lên khung lịch học cho toàn trường. Dữ liệu sẽ đồng bộ cho giảng viên và sinh viên.', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+              Text('Tải lên khung lịch học cho toàn trường. Dữ liệu sẽ đồng bộ cho giảng viên và sinh viên.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
             ],
           ),
         ),
@@ -515,7 +518,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withOpacity(0.3))),
+                decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withValues(alpha: 0.3))),
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -534,9 +537,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: const Column(
                     children: [
@@ -677,9 +680,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
               if (courseMap.isEmpty) {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
+                  Icon(Icons.inbox, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                   const SizedBox(height: 16),
-                  Text('Chưa có bảng điểm nào được Giảng viên gửi lên', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  Text('Chưa có bảng điểm nào được Giảng viên gửi lên', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                 ]));
               }
 
@@ -701,15 +704,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
+                      color: Colors.white.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                     ),
                     child: Theme(
                       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                       child: ExpansionTile(
                         leading: CircleAvatar(
-                          backgroundColor: isPublished ? Colors.green.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                          backgroundColor: isPublished ? Colors.green.withValues(alpha: 0.2) : Colors.orange.withValues(alpha: 0.2),
                           child: Icon(isPublished ? Icons.check_circle : Icons.pending_actions, color: isPublished ? Colors.green : Colors.orange),
                         ),
                         title: Text('$courseName ($classGroup)', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
@@ -783,39 +786,259 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  // --- 5: Quản lý SV ---
+  // --- 5: Quản lý Đăng nhập ---
   Widget _buildStudentMgmt() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.people, color: AppColors.adminColor, size: 28),
-          SizedBox(width: 12),
-          Text('QUẢN LÝ SINH VIÊN', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
-        ]),
-        const SizedBox(height: 24),
-        _studentRow('Nguyễn Văn A', '29210247142', 'KTPM2022'),
-        _studentRow('Trần Thị B', '29210247143', 'KTPM2022'),
-        _studentRow('Lê Văn C', '29210247144', 'KTPM2022'),
-        _studentRow('Phạm Thị D', '29210247145', 'CNTT2023'),
-      ]),
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance.collection('users').get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Lỗi: ${snapshot.error}', style: const TextStyle(color: Colors.white70)));
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: Text('Không có dữ liệu', style: TextStyle(color: Colors.white70)));
+        }
+
+        final allUsers = snapshot.data!.docs.map((doc) => {
+          'id': doc.id,
+          ...doc.data() as Map<String, dynamic>
+        }).toList();
+
+        final students = allUsers.where((u) => u['role'] == 'student').toList();
+        final lecturers = allUsers.where((u) => u['role'] == 'lecturer').toList();
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Row(children: [
+              Icon(Icons.login, color: AppColors.adminColor, size: 28),
+              SizedBox(width: 12),
+              Text('QUẢN LÝ ĐĂNG NHẬP', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
+            ]),
+            const SizedBox(height: 24),
+
+            // Students Table
+            _buildUserTable('Danh sách Sinh viên', students, Icons.school),
+            const SizedBox(height: 32),
+
+            // Lecturers Table
+            _buildUserTable('Danh sách Giảng viên', lecturers, Icons.person),
+          ]),
+        );
+      },
     );
   }
 
-  Widget _studentRow(String name, String id, String cls) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
-      child: Row(children: [
-        CircleAvatar(backgroundColor: AppColors.adminColor.withOpacity(0.2), radius: 18, child: const Icon(Icons.person, color: AppColors.adminColor, size: 18)),
-        const SizedBox(width: 16),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-          Text('MSSV: $id  •  Lớp: $cls', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
-        ])),
-      ]),
+  Widget _buildUserTable(String title, List<Map<String, dynamic>> users, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, color: AppColors.adminColor, size: 24),
+          const SizedBox(width: 12),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.adminColor.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text('${users.length}', style: const TextStyle(color: AppColors.adminColor, fontSize: 12)),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: users.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(child: Text('Không có dữ liệu', style: TextStyle(color: Colors.white70))),
+                )
+              : Column(
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppColors.adminColor.withValues(alpha: 0.1),
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(12),
+                          topRight: Radius.circular(12),
+                        ),
+                      ),
+                      child: const Row(
+                        children: [
+                          Expanded(flex: 2, child: Text('Họ tên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 2, child: Text('Email', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 1, child: Text('Vai trò', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 2, child: Text('Đăng nhập cuối', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                        ],
+                      ),
+                    ),
+                    // Rows
+                    ...users.map((user) => _buildUserRow(user)),
+                  ],
+                ),
+        ),
+      ],
     );
+  }
+
+  Widget _buildUserRow(Map<String, dynamic> user) {
+    final fullName = user['fullName'] ?? 'N/A';
+    final email = user['email'] ?? 'N/A';
+    final role = user['role'] ?? 'N/A';
+    final userId = user['id'] as String?;
+
+    return FutureBuilder<DatabaseEvent>(
+      future: FirebaseDatabase.instance.ref('users/$userId/lastLogin').once(),
+      builder: (context, snapshot) {
+        String lastLoginText = 'Chưa đăng nhập';
+        if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+          final timestamp = snapshot.data!.snapshot.value as int?;
+          if (timestamp != null) {
+            final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+            lastLoginText = '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+          }
+        }
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+          ),
+          child: Row(
+            children: [
+              Expanded(flex: 2, child: Text(fullName, style: const TextStyle(color: Colors.white))),
+              Expanded(flex: 2, child: Text(email, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13))),
+              Expanded(flex: 1, child: Text(role, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12))),
+              Expanded(flex: 2, child: Text(lastLoginText, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12))),
+              if (role == 'student' && userId != null) ...[
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _showCancelCreditsDialog(userId, fullName),
+                  icon: const Icon(Icons.cancel, size: 16),
+                  label: const Text('Hủy tín chỉ', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withValues(alpha: 0.8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showCancelCreditsDialog(String userId, String studentName) async {
+    // Get student's registered courses
+    final snapshot = await FirebaseFirestore.instance
+        .collection('registrations')
+        .where('userId', isEqualTo: userId)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sinh viên chưa đăng ký môn học nào'), backgroundColor: Colors.orange),
+        );
+      }
+      return;
+    }
+
+    final registrations = snapshot.docs.map((doc) => {
+      'id': doc.id,
+      ...doc.data() as Map<String, dynamic>
+    }).toList();
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: Text('Hủy tín chỉ - $studentName', style: const TextStyle(color: Colors.white)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Chọn môn học để hủy:', style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 16),
+              ...registrations.map((reg) => ListTile(
+                title: Text(reg['courseName'] ?? 'N/A', style: const TextStyle(color: Colors.white)),
+                subtitle: Text('${reg['classGroup'] ?? 'N/A'} - ${reg['semester'] ?? 'N/A'}', 
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6))),
+                trailing: IconButton(
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _confirmCancelCredit(reg['id'], reg['courseName']);
+                  },
+                ),
+              )),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng', style: TextStyle(color: Colors.white70)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmCancelCredit(String registrationId, String courseName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: const Text('Xác nhận hủy tín chỉ', style: TextStyle(color: Colors.white)),
+        content: Text('Bạn có chắc muốn hủy môn "$courseName"?\n\nHành động này không thể hoàn tác.', 
+          style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Xác nhận hủy', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('registrations').doc(registrationId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã hủy môn $courseName'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // --- 6: Quản lý Môn Đăng Ký ---
@@ -869,9 +1092,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
               
               if (docs.isEmpty) {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
+                  Icon(Icons.inbox, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                   const SizedBox(height: 16),
-                  Text('Chưa có môn nào cho $_adminRegSemester - $_adminRegYear', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  Text('Chưa có môn nào cho $_adminRegSemester - $_adminRegYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                   const SizedBox(height: 16),
                   const Text('Nhấn "Tải lên DS Môn ĐK (CSV)" để tải dữ liệu lên.', style: TextStyle(color: Colors.white38, fontSize: 13)),
                 ]));
@@ -881,7 +1104,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(Colors.white.withOpacity(0.05)),
+                    headingRowColor: WidgetStateProperty.all(Colors.white.withValues(alpha: 0.05)),
                     dataRowColor: WidgetStateProperty.all(Colors.transparent),
                     columns: const [
                       DataColumn(label: Text('Mã Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
@@ -909,11 +1132,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         DataCell(Row(children: [
                           Text('$current/$max', style: TextStyle(color: pct >= 1.0 ? Colors.red : Colors.white, fontWeight: FontWeight.bold)),
                           const SizedBox(width: 8),
-                          SizedBox(width: 50, child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: pct, minHeight: 6, backgroundColor: Colors.white.withOpacity(0.1), valueColor: AlwaysStoppedAnimation(pct >= 1.0 ? Colors.red : AppColors.adminColor)))),
+                          SizedBox(width: 50, child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: pct, minHeight: 6, backgroundColor: Colors.white.withValues(alpha: 0.1), valueColor: AlwaysStoppedAnimation(pct >= 1.0 ? Colors.red : AppColors.adminColor)))),
                         ])),
                         DataCell(Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(color: d['status'] == 'open' ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
+                          decoration: BoxDecoration(color: d['status'] == 'open' ? Colors.green.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(8)),
                           child: Text(d['status'] == 'open' ? 'Mở' : 'Đóng', style: TextStyle(color: d['status'] == 'open' ? Colors.green : Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
                         )),
                         DataCell(Row(children: [
@@ -947,7 +1170,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget _filterDropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withOpacity(0.15))),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withValues(alpha: 0.15))),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
@@ -998,14 +1221,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
               }
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) {
-                return Center(child: Text('Chưa có lượt đăng ký nào trong $_adminRegSemester - $_adminRegYear', style: TextStyle(color: Colors.white.withOpacity(0.5))));
+                return Center(child: Text('Chưa có lượt đăng ký nào trong $_adminRegSemester - $_adminRegYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))));
               }
               return SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DataTable(
-                    headingRowColor: WidgetStateProperty.all(Colors.white.withOpacity(0.05)),
+                    headingRowColor: WidgetStateProperty.all(Colors.white.withValues(alpha: 0.05)),
                     dataRowColor: WidgetStateProperty.all(Colors.transparent),
                     columns: const [
                       DataColumn(label: Text('Thời gian ĐK', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
@@ -1117,7 +1340,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(4)),
+                    decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(4)),
                     child: Text(_uploadDeadline != null ? '${_uploadDeadline!.day}/${_uploadDeadline!.month}/${_uploadDeadline!.year} ${_uploadDeadline!.hour.toString().padLeft(2,'0')}:${_uploadDeadline!.minute.toString().padLeft(2,'0')}' : 'Chọn thời hạn', style: const TextStyle(color: Colors.white)),
                   ),
                 )),
@@ -1131,9 +1354,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     decoration: BoxDecoration(
-                      color: AppColors.adminColor.withOpacity(0.2),
+                      color: AppColors.adminColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.adminColor.withOpacity(0.5)),
+                      border: Border.all(color: AppColors.adminColor.withValues(alpha: 0.5)),
                     ),
                     child: const Column(
                       children: [
@@ -1282,6 +1505,245 @@ class _AdminDashboardState extends State<AdminDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Lỗi tải file: $e'), backgroundColor: Colors.red, duration: const Duration(seconds: 8)),
       );
+    }
+  }
+
+  // --- 8: Phê duyệt đổi Cố vấn ---
+  Widget _buildAdvisorChangeApproval() {
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance
+          .collection('advisor_change_requests')
+          .get(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text('Lỗi: ${snapshot.error}', style: const TextStyle(color: Colors.white70)));
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: Text('Không có dữ liệu', style: TextStyle(color: Colors.white70)));
+        }
+
+        final allRequests = snapshot.data!.docs.map((doc) => {
+          'id': doc.id,
+          ...doc.data() as Map<String, dynamic>
+        }).toList();
+
+        // Filter and sort on client side
+        final requests = allRequests
+            .where((req) => req['status'] == 'pending')
+            .toList()
+          ..sort((a, b) {
+            final aTime = a['createdAt'] as Timestamp?;
+            final bTime = b['createdAt'] as Timestamp?;
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+          });
+
+        if (requests.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(48),
+              child: Column(
+                children: [
+                  Icon(Icons.inbox, size: 64, color: Colors.white24),
+                  SizedBox(height: 16),
+                  Text('Không có yêu cầu nào đang chờ phê duyệt', style: TextStyle(color: Colors.white70)),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(children: [
+                Icon(Icons.support_agent, color: AppColors.adminColor, size: 28),
+                SizedBox(width: 12),
+                Text('PHÊ DUYỆT ĐỔI CỐ VẤN', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
+              ]),
+              const SizedBox(height: 16),
+              Text('Danh sách yêu cầu đổi cố vấn đang chờ phê duyệt', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+              const SizedBox(height: 24),
+              
+              if (requests.isEmpty) ...[
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(48),
+                    child: Column(
+                      children: [
+                        Icon(Icons.inbox, size: 64, color: Colors.white24),
+                        SizedBox(height: 16),
+                        Text('Không có yêu cầu nào đang chờ phê duyệt', style: TextStyle(color: Colors.white70)),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else ...[
+                ...requests.map((req) => _buildAdvisorRequestItem(req)),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildAdvisorRequestItem(Map<String, dynamic> req) {
+    final userName = req['userName'] ?? 'N/A';
+    final userEmail = req['userEmail'] ?? 'N/A';
+    final newAdvisorName = req['newAdvisorName'] ?? 'N/A';
+    final createdAt = req['createdAt'] as Timestamp?;
+    final dateStr = createdAt != null 
+        ? '${createdAt.toDate().day}/${createdAt.toDate().month}/${createdAt.toDate().year} ${createdAt.toDate().hour}:${createdAt.toDate().minute.toString().padLeft(2, '0')}'
+        : 'N/A';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.adminColor.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.person, color: AppColors.adminColor, size: 24),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(userName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 4),
+                    Text(userEmail, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text('Đang chờ', style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(Icons.arrow_forward, size: 16, color: Colors.white.withValues(alpha: 0.5)),
+              const SizedBox(width: 8),
+              Text('Muốn đổi sang: ', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 14)),
+              Text(newAdvisorName, style: const TextStyle(color: AppColors.adminColor, fontWeight: FontWeight.bold, fontSize: 14)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text('Ngày gửi: $dateStr', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _rejectAdvisorChange(req['id'], req['userId']),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withValues(alpha: 0.8),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Từ chối', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => _approveAdvisorChange(req['id'], req['userId'], req['newAdvisorId']),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.adminColor,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Phê duyệt', style: TextStyle(color: Colors.white)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approveAdvisorChange(String requestId, String userId, String newAdvisorId) async {
+    try {
+      // Update request status
+      await FirebaseFirestore.instance.collection('advisor_change_requests').doc(requestId).update({
+        'status': 'approved',
+        'approvedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update user's advisor
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'advisorId': newAdvisorId,
+        'pendingAdvisorChange': false,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã phê duyệt yêu cầu đổi cố vấn'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectAdvisorChange(String requestId, String userId) async {
+    try {
+      // Update request status
+      await FirebaseFirestore.instance.collection('advisor_change_requests').doc(requestId).update({
+        'status': 'rejected',
+        'rejectedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Remove pending flag from user
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({
+        'pendingAdvisorChange': false,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã từ chối yêu cầu đổi cố vấn'), backgroundColor: Colors.orange),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red),
+        );
+      }
     }
   }
 }

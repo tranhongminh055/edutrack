@@ -14,6 +14,9 @@ import '../services/course_registration_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'welcome_screen.dart';
 import '../widgets/role_selector.dart';
+import '../widgets/mail_client_view.dart';
+import '../widgets/forum_board_view.dart';
+import '../widgets/lecturer_library_view.dart';
 import 'elearning/elearning_dashboard.dart';
 
 class LecturerDashboard extends StatefulWidget {
@@ -30,7 +33,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   final CourseRegistrationService _regService = CourseRegistrationService();
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _contentCtrl = TextEditingController();
-  bool _showSuccess = false;
+  final bool _showSuccess = false;
   String _lecturerRegSemester = 'Học kỳ 1';
   String _lecturerRegYear = '2025-2026';
   String? _selectedGradingCourseDocId;
@@ -93,7 +96,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   Widget _buildTopNav() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      color: Colors.black.withOpacity(0.2),
+      color: Colors.black.withValues(alpha: 0.2),
       child: Row(
         children: [
           const Icon(Icons.school, color: AppColors.lecturerColor, size: 24),
@@ -101,13 +104,16 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           const Text('EduTrack', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(width: 32),
           _buildTopNavLink(Icons.home, 'Trang chủ', onTap: () => setState(() => _menuIndex = 0)),
-          _buildTopNavLink(Icons.mail, 'Mail'),
+          _buildTopNavLink(Icons.mail, 'Mail', onTap: () => setState(() => _menuIndex = 998)),
           _buildTopNavLink(Icons.check_circle, 'E-Learning', onTap: () {
             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
             web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}', '_blank');
           }),
-          _buildTopNavLink(Icons.forum, 'Forum'),
-          _buildTopNavLink(Icons.library_books, 'e-Lib'),
+          _buildTopNavLink(Icons.forum, 'Forum', onTap: () {
+            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}&view=forum', '_blank');
+          }),
+          _buildTopNavLink(Icons.library_books, 'e-Lib', onTap: () => setState(() => _menuIndex = 996)),
           const Spacer(),
           Text(widget.email, style: const TextStyle(color: Colors.white70, fontSize: 13)),
           const SizedBox(width: 16),
@@ -122,7 +128,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: Colors.red.withOpacity(0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withOpacity(0.3))),
+              decoration: BoxDecoration(color: Colors.red.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withValues(alpha: 0.3))),
               child: const Row(children: [
                 Icon(Icons.logout, color: Colors.redAccent, size: 14),
                 SizedBox(width: 4),
@@ -181,7 +187,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('my', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 24, fontStyle: FontStyle.italic)),
+                Text('my', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 24, fontStyle: FontStyle.italic)),
                 const Text('EDUTRACK', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2)),
               ],
             ),
@@ -197,7 +203,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(dateStr, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
+                Text(dateStr, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
               ],
             ),
             
@@ -223,7 +229,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
       margin: const EdgeInsets.symmetric(horizontal: 2),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(digit, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
@@ -250,13 +256,13 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.lecturerColor.withOpacity(0.3),
+                color: AppColors.lecturerColor.withValues(alpha: 0.3),
                 borderRadius: const BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
               ),
               child: Row(children: [
                 Container(
                   width: 40, height: 40,
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.lecturerColor.withOpacity(0.3)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.lecturerColor.withValues(alpha: 0.3)),
                   child: const Icon(Icons.person, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
@@ -275,7 +281,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       decoration: BoxDecoration(
-                        color: sel ? Colors.white.withOpacity(0.1) : Colors.transparent,
+                        color: sel ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
                         border: Border(left: sel ? const BorderSide(color: AppColors.lecturerColor, width: 4) : BorderSide.none),
                       ),
                       child: Row(children: [
@@ -305,6 +311,8 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           3 => _buildStudentRegistrations(),
           4 => _buildGrading(),
           5 => _buildStudentMgmt(),
+          996 => LecturerLibraryView(email: widget.email),
+          998 => MailClientView(role: UserRole.lecturer, email: widget.email),
           999 => ELearningDashboard(
                  role: UserRole.lecturer, 
                  userId: '', 
@@ -381,13 +389,13 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   Widget _statCard(String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16)),
       child: Column(children: [
         Icon(icon, color: color, size: 32),
         const SizedBox(height: 12),
         Text(value, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
       ]),
     );
   }
@@ -396,16 +404,16 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), border: Border(left: BorderSide(color: c, width: 4)), borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8))),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), border: Border(left: BorderSide(color: c, width: 4)), borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8))),
       child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(subj, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(room, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+          Text(room, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(color: c.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: c.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
           child: Text(time, style: TextStyle(color: c, fontWeight: FontWeight.bold, fontSize: 12)),
         ),
       ]),
@@ -445,9 +453,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                     padding: const EdgeInsets.all(48),
                     child: Column(
                       children: [
-                        Icon(Icons.notifications_off, size: 48, color: Colors.white.withOpacity(0.3)),
+                        Icon(Icons.notifications_off, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                         const SizedBox(height: 16),
-                        Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                        Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                       ],
                     ),
                   ),
@@ -485,17 +493,17 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Icon(Icons.person_outline, size: 14, color: Colors.white.withOpacity(0.5)),
+                  Icon(Icons.person_outline, size: 14, color: Colors.white.withValues(alpha: 0.5)),
                   const SizedBox(width: 4),
-                  Text(n.sender, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
+                  Text(n.sender, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
                   const SizedBox(width: 16),
-                  Icon(Icons.access_time, size: 14, color: Colors.white.withOpacity(0.5)),
+                  Icon(Icons.access_time, size: 14, color: Colors.white.withValues(alpha: 0.5)),
                   const SizedBox(width: 4),
-                  Text(n.date, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
+                  Text(n.date, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
                 ],
               ),
               const SizedBox(height: 20),
-              Divider(color: Colors.white.withOpacity(0.1)),
+              Divider(color: Colors.white.withValues(alpha: 0.1)),
               const SizedBox(height: 16),
               Text(n.content ?? 'Không có nội dung chi tiết.', style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.7)),
             ],
@@ -512,9 +520,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: isNew ? Colors.white.withOpacity(0.08) : Colors.transparent,
+          color: isNew ? Colors.white.withValues(alpha: 0.08) : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
-          border: isNew ? Border.all(color: AppColors.studentColor.withOpacity(0.3)) : null,
+          border: isNew ? Border.all(color: AppColors.studentColor.withValues(alpha: 0.3)) : null,
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -525,7 +533,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               decoration: BoxDecoration(
                 color: isNew ? Colors.orangeAccent : AppColors.studentColor,
                 shape: BoxShape.circle,
-                boxShadow: isNew ? [BoxShadow(color: Colors.orangeAccent.withOpacity(0.6), blurRadius: 8)] : [],
+                boxShadow: isNew ? [BoxShadow(color: Colors.orangeAccent.withValues(alpha: 0.6), blurRadius: 8)] : [],
               ),
             ),
             const SizedBox(width: 16),
@@ -553,7 +561,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                           margin: const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: AppColors.lecturerColor.withOpacity(0.2),
+                            color: AppColors.lecturerColor.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: const Text('GV', style: TextStyle(color: AppColors.lecturerColor, fontSize: 10, fontWeight: FontWeight.bold)),
@@ -563,19 +571,19 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      Icon(Icons.person_outline, size: 14, color: Colors.white.withOpacity(0.5)),
+                      Icon(Icons.person_outline, size: 14, color: Colors.white.withValues(alpha: 0.5)),
                       const SizedBox(width: 4),
-                      Text(sender, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                      Text(sender, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                       const SizedBox(width: 16),
-                      Icon(Icons.access_time, size: 14, color: Colors.white.withOpacity(0.5)),
+                      Icon(Icons.access_time, size: 14, color: Colors.white.withValues(alpha: 0.5)),
                       const SizedBox(width: 4),
-                      Text(date, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+                      Text(date, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
                     ],
                   ),
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3), size: 20),
+            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.3), size: 20),
           ],
         ),
       ),
@@ -598,7 +606,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                 Text('LỊCH DẠY CỦA BẠN', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
               ]),
               const SizedBox(height: 8),
-              Text('Hiển thị lịch giảng dạy của bạn trong học kỳ này.', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13)),
+              Text('Hiển thị lịch giảng dạy của bạn trong học kỳ này.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
             ],
           ),
         ),
@@ -656,7 +664,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withOpacity(0.3))),
+                decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.orange.withValues(alpha: 0.3))),
                 child: const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -675,9 +683,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
+                    color: Colors.white.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                   ),
                   child: const Column(
                     children: [
@@ -745,7 +753,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           final lecturerEmail = row[5].toString().trim();
           final studentClass = row[6].toString().trim();
 
-          final id = '${courseName}_${room}_${dayOfWeek}_${startHour}_${studentClass}'.replaceAll(' ', '_').replaceAll('/', '_');
+          final id = '${courseName}_${room}_${dayOfWeek}_${startHour}_$studentClass'.replaceAll(' ', '_').replaceAll('/', '_');
 
           await firestore.collection('schedules').doc(id).set({
             'courseName': courseName,
@@ -809,9 +817,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.inbox, size: 48, color: Colors.white.withOpacity(0.3)),
+                  Icon(Icons.inbox, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                   const SizedBox(height: 16),
-                  Text('Bạn chưa có sinh viên/lớp nào trong $_lecturerRegSemester - $_lecturerRegYear', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  Text('Bạn chưa có sinh viên/lớp nào trong $_lecturerRegSemester - $_lecturerRegYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                 ]));
               }
 
@@ -867,14 +875,14 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: Colors.white.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child: ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             leading: CircleAvatar(
-              backgroundColor: isAllSubmitted ? Colors.green.withOpacity(0.2) : AppColors.lecturerColor.withOpacity(0.2),
+              backgroundColor: isAllSubmitted ? Colors.green.withValues(alpha: 0.2) : AppColors.lecturerColor.withValues(alpha: 0.2),
               child: Icon(isAllSubmitted ? Icons.check_circle : Icons.edit_document, color: isAllSubmitted ? Colors.green : AppColors.lecturerColor),
             ),
             title: Text('$courseName ($classGroup)', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
@@ -940,7 +948,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                   },
                   icon: const Icon(Icons.sync),
                   label: const Text('Lấy điểm Sakai'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.withOpacity(0.8), foregroundColor: Colors.white),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.withValues(alpha: 0.8), foregroundColor: Colors.white),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
@@ -959,7 +967,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               ] else ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(color: Colors.green.withOpacity(0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green)),
+                  decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.green)),
                   child: const Text('BẢNG ĐIỂM ĐÃ KHOÁ (Đã gửi Admin)', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
                 )
               ]
@@ -982,7 +990,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               return Container(
                 margin: const EdgeInsets.only(bottom: 8),
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.03), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(8)),
                 child: Row(
                   children: [
                     Expanded(flex: 2, child: Text(userId, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
@@ -1018,7 +1026,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                       flex: 1,
                       child: Container(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(4)),
+                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(4)),
                         alignment: Alignment.center,
                         child: Text('Thi CK (70%)\n$fin', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                       )
@@ -1056,13 +1064,13 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10)),
       child: Row(children: [
-        CircleAvatar(backgroundColor: AppColors.lecturerColor.withOpacity(0.2), radius: 18, child: const Icon(Icons.person, color: AppColors.lecturerColor, size: 18)),
+        CircleAvatar(backgroundColor: AppColors.lecturerColor.withValues(alpha: 0.2), radius: 18, child: const Icon(Icons.person, color: AppColors.lecturerColor, size: 18)),
         const SizedBox(width: 16),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-          Text('MSSV: $id  •  Lớp: $cls', style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+          Text('MSSV: $id  •  Lớp: $cls', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
         ])),
       ]),
     );
@@ -1100,9 +1108,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               final docs = snapshot.data?.docs ?? [];
               if (docs.isEmpty) {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.person_search, size: 48, color: Colors.white.withOpacity(0.3)),
+                  Icon(Icons.person_search, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                   const SizedBox(height: 16),
-                  Text('Chưa có sinh viên nào đăng ký lớp của bạn trong $_lecturerRegSemester - $_lecturerRegYear', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                  Text('Chưa có sinh viên nào đăng ký lớp của bạn trong $_lecturerRegSemester - $_lecturerRegYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                 ]));
               }
               
@@ -1125,9 +1133,9 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 24),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1135,7 +1143,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
-                              color: AppColors.lecturerColor.withOpacity(0.2),
+                              color: AppColors.lecturerColor.withValues(alpha: 0.2),
                               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                             ),
                             child: Row(
@@ -1189,7 +1197,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   Widget _filterDropdown(String label, String value, List<String> items, ValueChanged<String?> onChanged) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: Colors.white.withOpacity(0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withOpacity(0.15))),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withValues(alpha: 0.15))),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value, dropdownColor: const Color(0xFF1a2a1f),

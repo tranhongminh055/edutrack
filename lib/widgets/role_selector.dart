@@ -130,16 +130,16 @@ class _RoleCardState extends State<_RoleCard>
             border: Border.all(
               color: widget.isSelected
                   ? widget.color
-                  : (widget.isLightMode ? Colors.black.withOpacity(0.2) : Colors.white.withOpacity(0.2)),
+                  : (widget.isLightMode ? Colors.black.withValues(alpha: 0.2) : Colors.white.withValues(alpha: 0.2)),
               width: widget.isSelected ? 2.5 : 1.5,
             ),
             color: widget.isSelected
-                ? widget.color.withOpacity(0.15)
-                : (widget.isLightMode ? Colors.transparent : Colors.white.withOpacity(0.05)),
+                ? widget.color.withValues(alpha: 0.15)
+                : (widget.isLightMode ? Colors.transparent : Colors.white.withValues(alpha: 0.05)),
             boxShadow: widget.isSelected
                 ? [
                     BoxShadow(
-                      color: widget.color.withOpacity(0.3),
+                      color: widget.color.withValues(alpha: 0.3),
                       blurRadius: 20,
                       spreadRadius: -2,
                     ),
@@ -156,18 +156,18 @@ class _RoleCardState extends State<_RoleCard>
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: widget.isSelected
-                      ? widget.color.withOpacity(0.2)
-                      : (widget.isLightMode ? Colors.black.withOpacity(0.05) : Colors.white.withOpacity(0.08)),
+                      ? widget.color.withValues(alpha: 0.2)
+                      : (widget.isLightMode ? Colors.black.withValues(alpha: 0.05) : Colors.white.withValues(alpha: 0.08)),
                   border: Border.all(
                     color: widget.isSelected
-                        ? widget.color.withOpacity(0.5)
-                        : (widget.isLightMode ? Colors.black.withOpacity(0.1) : Colors.white.withOpacity(0.15)),
+                        ? widget.color.withValues(alpha: 0.5)
+                        : (widget.isLightMode ? Colors.black.withValues(alpha: 0.1) : Colors.white.withValues(alpha: 0.15)),
                     width: 2,
                   ),
                   boxShadow: widget.isSelected
                       ? [
                           BoxShadow(
-                            color: widget.color.withOpacity(0.4),
+                            color: widget.color.withValues(alpha: 0.4),
                             blurRadius: 15,
                           ),
                         ]
@@ -177,7 +177,7 @@ class _RoleCardState extends State<_RoleCard>
                   widget.icon,
                   color: widget.isSelected
                       ? widget.color
-                      : (widget.isLightMode ? Colors.black.withOpacity(0.4) : Colors.white.withOpacity(0.6)),
+                      : (widget.isLightMode ? Colors.black.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.6)),
                   size: 28,
                 ),
               ),
@@ -187,7 +187,7 @@ class _RoleCardState extends State<_RoleCard>
                 style: TextStyle(
                   color: widget.isSelected
                       ? (widget.isLightMode ? widget.color : Colors.white)
-                      : (widget.isLightMode ? Colors.black87 : Colors.white.withOpacity(0.7)),
+                      : (widget.isLightMode ? Colors.black87 : Colors.white.withValues(alpha: 0.7)),
                   fontSize: 14,
                   fontWeight:
                       widget.isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -198,8 +198,8 @@ class _RoleCardState extends State<_RoleCard>
                 widget.subtitle,
                 style: TextStyle(
                   color: widget.isSelected
-                      ? widget.color.withOpacity(0.8)
-                      : (widget.isLightMode ? Colors.black54 : Colors.white.withOpacity(0.4)),
+                      ? widget.color.withValues(alpha: 0.8)
+                      : (widget.isLightMode ? Colors.black54 : Colors.white.withValues(alpha: 0.4)),
                   fontSize: 11,
                   fontWeight: FontWeight.w400,
                 ),
@@ -218,7 +218,7 @@ class _RoleCardState extends State<_RoleCard>
                   border: Border.all(
                     color: widget.isSelected
                         ? widget.color
-                        : (widget.isLightMode ? Colors.black26 : Colors.white.withOpacity(0.3)),
+                        : (widget.isLightMode ? Colors.black26 : Colors.white.withValues(alpha: 0.3)),
                     width: 2,
                   ),
                 ),

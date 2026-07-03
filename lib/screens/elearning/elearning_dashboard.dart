@@ -53,7 +53,7 @@ class _ELearningDashboardState extends State<ELearningDashboard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.2),
+                  color: Colors.blue.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Text(
@@ -69,7 +69,7 @@ class _ELearningDashboardState extends State<ELearningDashboard> {
                 icon: const Icon(Icons.open_in_new, size: 16),
                 label: const Text('Mở trang E-Learning'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white.withOpacity(0.2),
+                  backgroundColor: Colors.white.withValues(alpha: 0.2),
                   foregroundColor: Colors.white,
                 ),
               ),
@@ -81,7 +81,7 @@ class _ELearningDashboardState extends State<ELearningDashboard> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.quiz, size: 80, color: Colors.white.withOpacity(0.2)),
+                Icon(Icons.quiz, size: 80, color: Colors.white.withValues(alpha: 0.2)),
                 const SizedBox(height: 24),
                 const Text(
                   'Hệ thống Test & Quiz',
@@ -91,7 +91,7 @@ class _ELearningDashboardState extends State<ELearningDashboard> {
                 Text(
                   'Bấm nút "Mở trang E-Learning" để truy cập hệ thống\nkiểm tra và đánh giá trực tuyến.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 14, height: 1.6),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 14, height: 1.6),
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton.icon(

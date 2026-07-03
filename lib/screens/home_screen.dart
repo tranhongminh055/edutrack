@@ -12,6 +12,8 @@ import '../widgets/nature_background.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/role_selector.dart';
 import '../widgets/schedule_grid.dart';
+import '../widgets/mail_client_view.dart';
+import '../widgets/forum_board_view.dart';
 import '../services/notification_service.dart';
 import '../services/course_registration_service.dart';
 import 'lecturer_dashboard.dart';
@@ -286,13 +288,16 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text('EduTrack', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
           const SizedBox(width: 32),
           _buildTopNavLink(Icons.home, 'Trang chủ', onTap: () => setState(() => _selectedMenuIndex = 0)),
-          _buildTopNavLink(Icons.mail, 'Mail'),
+          _buildTopNavLink(Icons.mail, 'Mail', onTap: () => setState(() => _selectedMenuIndex = 998)),
           _buildTopNavLink(Icons.check_circle, 'E-Learning', onTap: () {
             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
             web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}', '_blank');
           }),
-          _buildTopNavLink(Icons.forum, 'Forum'),
-          _buildTopNavLink(Icons.library_books, 'e-Lib'),
+          _buildTopNavLink(Icons.forum, 'Forum', onTap: () {
+            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}&view=forum', '_blank');
+          }),
+          _buildTopNavLink(Icons.library_books, 'e-Lib', onTap: () => setState(() => _selectedMenuIndex = 8)),
           const Spacer(),
           const Text('Việt Nam  |  English', style: TextStyle(color: Colors.white70, fontSize: 13)),
         ],
@@ -302,7 +307,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildTopNavLink(IconData icon, String label, {VoidCallback? onTap}) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        debugPrint('Clicked on $label');
+        if (onTap != null) onTap();
+      },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Row(
@@ -613,6 +621,7 @@ class _HomeScreenState extends State<HomeScreen> {
       case 9: return _buildSoftwareContent();
       case 10: return _buildHandbookContent();
       case 11: return _buildCertificateContent();
+      case 998: return MailClientView(role: UserRole.student, email: widget.email);
       case 999: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
       default: return _buildRulesContent();
     }
@@ -2161,74 +2170,124 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 4.3 Chương Trình học
+  // 4.3 Chương Trình học - Danh sách môn đã đăng ký
   Widget _buildCurriculumTree() {
-    if (_majorController.text.trim().isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.warning_amber, size: 64, color: Colors.orange.withOpacity(0.5)),
-            const SizedBox(height: 16),
-            const Text('Chưa cập nhật chuyên ngành!', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('Vui lòng vào phần "Thông tin Cá nhân" để điền chuyên ngành của bạn.', style: TextStyle(color: Colors.white.withOpacity(0.7))),
-          ],
-        ),
-      );
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const Center(child: Text('Vui lòng đăng nhập', style: TextStyle(color: Colors.white70)));
     }
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('curriculums').where('major', isEqualTo: _majorController.text.trim()).limit(1).snapshots(),
+      stream: FirebaseFirestore.instance.collection('registrations').where('userId', isEqualTo: user.uid).snapshots(),
       builder: (context, snapshot) {
-        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
-        
+        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
+        }
+
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.account_tree, size: 64, color: Colors.white.withOpacity(0.2)),
+                Icon(Icons.book, size: 64, color: Colors.white.withOpacity(0.2)),
                 const SizedBox(height: 16),
-                Text('Chưa có chương trình học cho ngành "${_majorController.text}".', style: const TextStyle(color: Colors.white70, fontSize: 16)),
+                const Text('Chưa đăng ký môn học nào', style: TextStyle(color: Colors.white70, fontSize: 16)),
                 const SizedBox(height: 8),
-                Text('Dữ liệu sẽ được Quản trị viên cập nhật sau.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                Text('Vui lòng vào phần "Đăng ký Môn học" để đăng ký.', style: TextStyle(color: Colors.white.withOpacity(0.5))),
               ],
             ),
           );
         }
 
-        final data = snapshot.data!.docs.first.data() as Map<String, dynamic>;
-        final categories = data['categories'] as List<dynamic>? ?? [];
+        final registrations = snapshot.data!.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildScreenHeader(Icons.account_tree, 'CHƯƠNG TRÌNH HỌC'),
+              _buildScreenHeader(Icons.book, 'DANH SÁCH MÔN HỌC ĐÃ ĐĂNG KÝ'),
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(color: Colors.red.shade800, borderRadius: BorderRadius.circular(4)),
-                child: Text('Hệ thống Đào tạo Ngành ${_majorController.text}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                decoration: BoxDecoration(color: AppColors.studentColor.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                child: Text('Tổng số: ${registrations.length} môn học', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
               ),
               const SizedBox(height: 16),
               // Header row
               Row(
                 children: [
-                  const Expanded(flex: 3, child: Text('Mã Môn / Tên Môn', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
-                  Expanded(flex: 1, child: Center(child: Text('Tín Chỉ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)))),
-                  Expanded(flex: 1, child: Center(child: Text('Trạng Thái', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)))),
+                  const Expanded(flex: 3, child: Text('Tên Môn Học', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                  const Expanded(flex: 1, child: Center(child: Text('Lớp', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)))),
+                  const Expanded(flex: 1, child: Center(child: Text('Giảng Viên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)))),
+                  const Expanded(flex: 1, child: Center(child: Text('Học Kỳ', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)))),
                 ],
               ),
               const Divider(color: Colors.white24, height: 32),
-              ...categories.map((cat) => _buildCurriculumCategory(cat as Map<String, dynamic>)),
+              ...registrations.map((reg) => _buildRegistrationItem(reg)),
             ],
           ),
         );
       }
+    );
+  }
+
+  Widget _buildRegistrationItem(Map<String, dynamic> reg) {
+    final courseName = reg['courseName'] ?? 'N/A';
+    final classGroup = reg['classGroup'] ?? 'N/A';
+    final lecturerName = reg['lecturerName'] ?? 'N/A';
+    final semester = reg['semester'] ?? 'N/A';
+    final academicYear = reg['academicYear'] ?? 'N/A';
+    final room = reg['room'] ?? 'N/A';
+    final dayOfWeek = reg['dayOfWeek'] ?? 0;
+    final startHour = reg['startHour'] ?? 0;
+
+    String getDayName(int day) {
+      switch (day) {
+        case 2: return 'Thứ 3';
+        case 3: return 'Thứ 4';
+        case 4: return 'Thứ 5';
+        case 5: return 'Thứ 6';
+        case 6: return 'Thứ 7';
+        case 7: return 'Chủ Nhật';
+        default: return 'Thứ 2';
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(flex: 3, child: Text(courseName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+              Expanded(flex: 1, child: Center(child: Text(classGroup, style: const TextStyle(color: Colors.white70, fontSize: 13)))),
+              Expanded(flex: 1, child: Center(child: Text(lecturerName, style: const TextStyle(color: Colors.white70, fontSize: 13)))),
+              Expanded(flex: 1, child: Center(child: Text('$semester\n$academicYear', style: const TextStyle(color: Colors.white70, fontSize: 12), textAlign: TextAlign.center))),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(Icons.location_on, size: 14, color: Colors.white.withOpacity(0.5)),
+              const SizedBox(width: 4),
+              Text('Phòng: $room', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+              const SizedBox(width: 16),
+              Icon(Icons.schedule, size: 14, color: Colors.white.withOpacity(0.5)),
+              const SizedBox(width: 4),
+              Text('${getDayName(dayOfWeek)} - Giờ: ${startHour.toStringAsFixed(1)}', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -2282,70 +2341,249 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 5: Cố vấn Học tập
   Widget _buildAdvisorContent() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildScreenHeader(Icons.support_agent, 'CỐ VẤN HỌC TẬP'),
-          const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 100, height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.blue.withOpacity(0.2),
-                  border: Border.all(color: Colors.blue, width: 2),
-                ),
-                child: const Icon(Icons.person, size: 50, color: Colors.blue),
-              ),
-              const SizedBox(width: 32),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('PGS. TS. Lê Văn B', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    Text('Giảng viên Khoa Công nghệ thông tin', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14)),
-                    const SizedBox(height: 16),
-                    _buildQuickLink(Icons.email, 'levanb@edutrack.edu.vn'),
-                    const SizedBox(height: 8),
-                    _buildQuickLink(Icons.phone, '0987 654 321'),
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return const Center(child: Text('Vui lòng đăng nhập', style: TextStyle(color: Colors.white70)));
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+      builder: (context, userSnapshot) {
+        if (!userSnapshot.hasData && userSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
+        }
+
+        final userData = userSnapshot.data?.data() as Map<String, dynamic>?;
+        final currentAdvisorId = userData?['advisorId'] as String?;
+        final hasPendingRequest = userData?['pendingAdvisorChange'] as bool? ?? false;
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'lecturer').snapshots(),
+          builder: (context, advisorsSnapshot) {
+            if (!advisorsSnapshot.hasData && advisorsSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator(color: AppColors.studentColor));
+            }
+
+            final advisors = advisorsSnapshot.data?.docs.map((doc) => {
+              'id': doc.id,
+              ...doc.data() as Map<String, dynamic>
+            }).toList() ?? [];
+
+            final currentAdvisor = currentAdvisorId != null 
+                ? advisors.cast<Map<String, dynamic>?>().firstWhere(
+                    (a) => a != null && a['id'] == currentAdvisorId, 
+                    orElse: () => null
+                  )
+                : null;
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(32),
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildScreenHeader(Icons.support_agent, 'CỐ VẤN HỌC TẬP'),
+                  const SizedBox(height: 24),
+                  
+                  if (currentAdvisor != null) ...[
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 100, height: 100,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue.withOpacity(0.2),
+                            border: Border.all(color: Colors.blue, width: 2),
+                          ),
+                          child: const Icon(Icons.person, size: 50, color: Colors.blue),
+                        ),
+                        const SizedBox(width: 32),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(currentAdvisor['fullName'] ?? 'N/A', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 8),
+                              Text(currentAdvisor['faculty'] ?? 'Giảng viên', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14)),
+                              const SizedBox(height: 16),
+                              _buildQuickLink(Icons.email, currentAdvisor['email'] ?? 'N/A'),
+                              const SizedBox(height: 8),
+                              if (currentAdvisor['phone'] != null && currentAdvisor['phone'].toString().isNotEmpty)
+                                _buildQuickLink(Icons.phone, currentAdvisor['phone'].toString()),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 32),
+                  ] else ...[
+                    const Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.person_off, size: 64, color: Colors.white24),
+                          SizedBox(height: 16),
+                          Text('Chưa có cố vấn học tập', style: TextStyle(color: Colors.white70, fontSize: 16)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
                   ],
-                ),
+
+                  if (hasPendingRequest) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.pending, color: Colors.orange, size: 20),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Text('Đang chờ Admin phê duyệt yêu cầu đổi cố vấn', 
+                              style: TextStyle(color: Colors.white, fontSize: 14)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+
+                  const Text('Chọn Cố vấn Học tập', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  
+                  ...advisors.map((advisor) {
+                    final isSelected = currentAdvisorId == advisor['id'];
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isSelected ? AppColors.studentColor.withOpacity(0.2) : Colors.white.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected ? AppColors.studentColor : Colors.white.withOpacity(0.1),
+                          width: isSelected ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50, height: 50,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.blue.withOpacity(0.2),
+                            ),
+                            child: const Icon(Icons.person, size: 25, color: Colors.blue),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(advisor['fullName'] ?? 'N/A', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 4),
+                                Text(advisor['faculty'] ?? 'Giảng viên', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
+                              ],
+                            ),
+                          ),
+                          if (isSelected) ...[
+                            const Icon(Icons.check_circle, color: AppColors.studentColor, size: 24),
+                          ] else if (!hasPendingRequest) ...[
+                            ElevatedButton(
+                              onPressed: () => _requestAdvisorChange(advisor['id'], advisor['fullName']),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.studentColor,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              ),
+                              child: const Text('Đổi', style: TextStyle(color: Colors.white, fontSize: 12)),
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
+
+                  if (advisors.isEmpty) ...[
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text('Chưa có danh sách cố vấn', style: TextStyle(color: Colors.white70)),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _requestAdvisorChange(String newAdvisorId, String newAdvisorName) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: const Text('Xác nhận đổi cố vấn', style: TextStyle(color: Colors.white)),
+        content: Text('Bạn có chắc muốn đổi sang cố vấn "$newAdvisorName"?\n\nYêu cầu sẽ được gửi đến Admin để phê duyệt.', 
+          style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
           ),
-          const SizedBox(height: 32),
-          const Text('Gửi tin nhắn cho Cố vấn', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.edit, color: Colors.white54, size: 16),
-                SizedBox(width: 8),
-                Text('Soạn tin nhắn...', style: TextStyle(color: Colors.white54)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {},
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.studentColor),
-            child: const Text('Gửi tin nhắn', style: TextStyle(color: Colors.white)),
+            child: const Text('Gửi yêu cầu', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
+
+    if (confirmed != true) return;
+
+    try {
+      // Get current advisor ID first
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final currentAdvisorId = userDoc.data()?['advisorId'];
+
+      // Create advisor change request
+      await FirebaseFirestore.instance.collection('advisor_change_requests').add({
+        'userId': user.uid,
+        'userEmail': widget.email,
+        'userName': widget.fullName,
+        'currentAdvisorId': currentAdvisorId,
+        'newAdvisorId': newAdvisorId,
+        'newAdvisorName': newAdvisorName,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update user document to mark pending request
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+        'pendingAdvisorChange': true,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã gửi yêu cầu đổi cố vấn. Vui lòng chờ Admin phê duyệt.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi: $e')),
+        );
+      }
+    }
   }
 
   // 6: Đánh giá & Khảo sát

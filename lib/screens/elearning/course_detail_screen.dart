@@ -72,7 +72,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Widget _buildTopNav(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      color: Colors.black.withOpacity(0.3),
+      color: Colors.black.withValues(alpha: 0.3),
       child: Row(
         children: [
           IconButton(
@@ -92,7 +92,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: _themeColor.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: _themeColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
             child: Text(widget.role == UserRole.student ? 'Sinh viên' : 'Giảng viên', style: TextStyle(color: _themeColor, fontSize: 12, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -116,7 +116,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white.withOpacity(0.1) : Colors.transparent,
+                  color: isSelected ? Colors.white.withValues(alpha: 0.1) : Colors.transparent,
                   border: Border(left: isSelected ? BorderSide(color: _themeColor, width: 4) : BorderSide.none),
                 ),
                 child: Row(
@@ -179,9 +179,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
+              color: Colors.white.withValues(alpha: 0.05),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,7 +194,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 const SizedBox(height: 8),
                 _infoRow(Icons.class_, 'Lớp:', widget.classGroup),
                 const SizedBox(height: 16),
-                Text('Tại đây bạn có thể lấy tài liệu, nộp bài tập và tham gia các bài kiểm tra được giao.', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                Text('Tại đây bạn có thể lấy tài liệu, nộp bài tập và tham gia các bài kiểm tra được giao.', style: TextStyle(color: Colors.white.withValues(alpha: 0.7))),
               ],
             ),
           ),
@@ -246,9 +246,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                   Container(
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.1),
+                      color: Colors.blue.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -320,9 +320,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.05),
+        color: Colors.white.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -414,9 +414,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: ListTile(
                         leading: Icon(isPdf ? Icons.picture_as_pdf : Icons.insert_drive_file, color: isPdf ? Colors.redAccent : Colors.blueAccent, size: 32),
@@ -538,9 +538,9 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                       margin: const EdgeInsets.only(bottom: 16),
                       padding: const EdgeInsets.all(20),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: Colors.white.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: isExpired ? Colors.red.withOpacity(0.3) : Colors.white.withOpacity(0.1)),
+                        border: Border.all(color: isExpired ? Colors.red.withValues(alpha: 0.3) : Colors.white.withValues(alpha: 0.1)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

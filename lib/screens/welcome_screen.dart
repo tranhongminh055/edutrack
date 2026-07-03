@@ -153,7 +153,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: AppColors.primaryGreen.withOpacity(0.4),
+                                color: AppColors.primaryGreen.withValues(alpha: 0.4),
                                 blurRadius: 30,
                                 spreadRadius: 5,
                               ),
@@ -259,7 +259,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                     child: Text(
                       '© 2026 EduTrack • Education Management',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.3),
+                        color: Colors.white.withValues(alpha: 0.3),
                         fontSize: 12,
                       ),
                     ),

@@ -50,7 +50,7 @@ export default function TestPanel({ course, role, userId, email }) {
     return () => unsubscribe();
   }, [course.docId]);
 
-  // 1. Fetch Active Sessions in real-time (Lecturer only)
+  // 1. Fetch Active Sessions in real-time (Lecturer only) - Camera sessions
   useEffect(() => {
     if (role !== 'lecturer') return;
 
@@ -60,10 +60,52 @@ export default function TestPanel({ course, role, userId, email }) {
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setActiveSessions(data);
+      const now = Date.now();
+      const cameraData = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data(), type: 'camera' }))
+        .filter(session => {
+          // Only show sessions that are active (updated within last 10 minutes)
+          const lastActive = session.lastActive?.toDate?.() || session.timestamp?.toDate?.();
+          if (!lastActive) return false;
+          const timeDiff = (now - lastActive.getTime()) / 1000;
+          return timeDiff < 600;
+        });
+      setActiveSessions(prev => {
+        const screenSessions = prev.filter(s => s.type === 'screen');
+        return [...cameraData, ...screenSessions];
+      });
     }, (error) => {
       console.error('Error fetching active sessions:', error);
+    });
+
+    return () => unsubscribe();
+  }, [course.docId, role]);
+
+  // 1b. Fetch Screen Sessions in real-time (Lecturer only)
+  useEffect(() => {
+    if (role !== 'lecturer') return;
+
+    const q = query(
+      collection(db, 'elearning_screen_sessions'),
+      where('courseDocId', '==', course.docId)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const now = Date.now();
+      const screenData = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data(), type: 'screen' }))
+        .filter(session => {
+          const lastActive = session.timestamp?.toDate?.();
+          if (!lastActive) return false;
+          const timeDiff = (now - lastActive.getTime()) / 1000;
+          return timeDiff < 600;
+        });
+      setActiveSessions(prev => {
+        const cameraSessions = prev.filter(s => s.type !== 'screen');
+        return [...cameraSessions, ...screenData];
+      });
+    }, (error) => {
+      console.error('Error fetching screen sessions:', error);
     });
 
     return () => unsubscribe();
@@ -440,7 +482,9 @@ export default function TestPanel({ course, role, userId, email }) {
                               <img
                                 src={session.liveFrame}
                                 alt={`Camera of ${session.studentEmail}`}
-                                className="w-full h-full object-cover transition-opacity duration-200"
+                                className="w-full h-full object-cover"
+                                loading="eager"
+                                style={{ imageRendering: 'auto' }}
                               />
                             ) : (
                               <div className="flex flex-col items-center space-y-2 text-gray-600">
@@ -485,7 +529,7 @@ export default function TestPanel({ course, role, userId, email }) {
                     <Monitor className="w-4 h-4 text-purple-400" />
                     <span>Giám sát màn hình sinh viên</span>
                   </h3>
-                  {activeSessions.filter(s => s.type === 'screen').length > 0 && (
+                  {activeSessions.filter(s => !s.type || s.type !== 'screen').length > 0 && (
                     <span className="text-xs text-gray-500">Nhấp để xem chi tiết</span>
                   )}
                 </div>
@@ -500,7 +544,7 @@ export default function TestPanel({ course, role, userId, email }) {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {activeSessions.filter(s => s.type === 'screen').map((session) => {
                       const isCheating = session.status === 'cheating';
-                      const lastActive = session.lastActive?.toDate ? session.lastActive.toDate() : new Date();
+                      const lastActive = session.timestamp?.toDate ? session.timestamp.toDate() : new Date();
                       const timeSinceUpdate = Math.floor((new Date() - lastActive) / 1000);
 
                       return (
@@ -514,11 +558,13 @@ export default function TestPanel({ course, role, userId, email }) {
                         >
                           {/* Screen Capture Container */}
                           <div className="w-full h-48 bg-black relative flex items-center justify-center">
-                            {session.liveFrame ? (
+                            {session.screenFrame ? (
                               <img
-                                src={session.liveFrame}
+                                src={session.screenFrame}
                                 alt={`Screen of ${session.studentEmail}`}
-                                className="w-full h-full object-cover transition-opacity duration-200"
+                                className="w-full h-full object-cover"
+                                loading="eager"
+                                style={{ imageRendering: 'auto' }}
                               />
                             ) : (
                               <div className="flex flex-col items-center space-y-2 text-gray-600">
@@ -663,8 +709,8 @@ export default function TestPanel({ course, role, userId, email }) {
                     </button>
                   </div>
                   <div className="w-full bg-black flex items-center justify-center" style={{ height: '500px' }}>
-                    {selectedScreenSession.liveFrame ? (
-                      <img src={selectedScreenSession.liveFrame} className="w-full h-full object-contain" alt="Fullscreen Screen Monitor" />
+                    {selectedScreenSession.screenFrame ? (
+                      <img src={selectedScreenSession.screenFrame} className="w-full h-full object-contain" alt="Fullscreen Screen Monitor" />
                     ) : (
                       <div className="flex flex-col items-center space-y-3">
                         <Loader2 className="w-10 h-10 animate-spin text-purple-500" />
@@ -675,8 +721,8 @@ export default function TestPanel({ course, role, userId, email }) {
                   <div className="p-4 bg-gray-900/60 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
                       <span className="text-xs text-gray-500">Trạng thái:
-                        <span className={`ml-1 font-bold ${selectedScreenSession.status === 'cheating' ? 'text-red-400' : 'text-purple-400'}`}>
-                          {selectedScreenSession.status === 'cheating' ? 'CẢNH BÁO VI PHẠM' : 'ĐANG GIÁM SÁT'}
+                        <span className={`ml-1 font-bold ${selectedScreenSession.status === 'banned' ? 'text-orange-400' : selectedScreenSession.status === 'cheating' ? 'text-red-400' : 'text-purple-400'}`}>
+                          {selectedScreenSession.status === 'banned' ? 'ĐÌNH CHỈ THI' : selectedScreenSession.status === 'cheating' ? 'CẢNH BÁO VI PHẠM' : 'ĐANG GIÁM SÁT'}
                         </span>
                       </span>
                       <span className="text-[10px] text-gray-600 font-mono">

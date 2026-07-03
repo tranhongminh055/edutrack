@@ -92,10 +92,10 @@ class _ScheduleGridState extends State<ScheduleGrid> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.02),
+        color: Colors.white.withValues(alpha: 0.02),
         border: Border(
-          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
-          top: BorderSide(color: Colors.white.withOpacity(0.1)),
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
         ),
       ),
       child: Row(
@@ -106,7 +106,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                 onTap: _prev,
                 child: Container(
                   padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
                   child: const Icon(Icons.chevron_left, color: Colors.white70, size: 20),
                 ),
               ),
@@ -115,7 +115,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                 onTap: _next,
                 child: Container(
                   padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.1)),
+                  decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)),
                   child: const Icon(Icons.chevron_right, color: Colors.white70, size: 20),
                 ),
               ),
@@ -124,7 +124,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                 onTap: _today,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
                   child: const Text('Hôm nay', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
                 ),
               ),
@@ -153,7 +153,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
         margin: const EdgeInsets.only(left: 8),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? Colors.white.withOpacity(0.2) : Colors.transparent,
+          color: isActive ? Colors.white.withValues(alpha: 0.2) : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(text, style: TextStyle(color: isActive ? Colors.white : Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
@@ -171,7 +171,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
           height: 80,
           alignment: Alignment.topRight,
           padding: const EdgeInsets.only(right: 8, top: 4),
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05)))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
           child: Text(h, style: const TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold)),
         )).toList(),
       ),
@@ -186,7 +186,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
           top: i * 80.0, left: 0, right: 0,
           child: Container(
             height: 80, 
-            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.05))))
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))))
           ),
         )),
         ...dayEvents.map((evt) {
@@ -197,9 +197,9 @@ class _ScheduleGridState extends State<ScheduleGrid> {
             child: Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: evt.color.withOpacity(0.9),
+                color: evt.color.withValues(alpha: 0.9),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.orangeAccent.withOpacity(0.5)),
+                border: Border.all(color: Colors.orangeAccent.withValues(alpha: 0.5)),
                 boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))],
               ),
               child: SingleChildScrollView(
@@ -235,14 +235,14 @@ class _ScheduleGridState extends State<ScheduleGrid> {
       children: [
         // Header
         Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1)))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
           child: Row(
             children: [
               const SizedBox(width: 60, child: Center(child: Text('Cả ngày', style: TextStyle(color: Colors.white70, fontSize: 12)))),
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                  decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
                   child: Center(
                     child: Text('${dayNames[weekdayIndex]}, ${_selectedDate.day}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),
@@ -263,7 +263,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                   _buildTimeColumn(),
                   Expanded(
                     child: Container(
-                      decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                      decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
                       child: _buildGridLinesAndEvents(widget.events, _selectedDate.weekday + 1),
                     ),
                   ),
@@ -284,7 +284,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
       children: [
         // Header
         Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1)))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
           child: Row(
             children: [
               const SizedBox(width: 60, child: Center(child: Text('Cả ngày', style: TextStyle(color: Colors.white70, fontSize: 12)))),
@@ -293,7 +293,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                 return Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                    decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
                     child: Center(
                       child: Text('${days[i]}, ${dt.day}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                     ),
@@ -316,7 +316,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
                   ...List.generate(7, (dayIndex) {
                     return Expanded(
                       child: Container(
-                        decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withOpacity(0.1)))),
+                        decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
                         child: _buildGridLinesAndEvents(widget.events, dayIndex + 2),
                       ),
                     );
@@ -364,7 +364,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
       children: [
         // Header
         Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.1)))),
+          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
           child: Row(
             children: days.map((d) => Expanded(
               child: Container(
@@ -397,8 +397,8 @@ class _ScheduleGridState extends State<ScheduleGrid> {
     
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white.withOpacity(0.05)),
-        color: isCurrentMonth ? Colors.transparent : Colors.black.withOpacity(0.2),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        color: isCurrentMonth ? Colors.transparent : Colors.black.withValues(alpha: 0.2),
       ),
       padding: const EdgeInsets.all(4),
       child: Column(
@@ -432,7 +432,7 @@ class _ScheduleGridState extends State<ScheduleGrid> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Colors.white.withOpacity(0.02),
+      color: Colors.white.withValues(alpha: 0.02),
       child: Column(
         children: [
           _buildToolbar(),

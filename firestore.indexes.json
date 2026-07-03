@@ -44,6 +44,22 @@
         { "fieldPath": "semester", "order": "ASCENDING" },
         { "fieldPath": "academicYear", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "quiz_submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "courseDocId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "quiz_submissions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "quizId", "order": "ASCENDING" },
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

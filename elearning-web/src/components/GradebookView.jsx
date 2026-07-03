@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, updateDoc, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../firebase';
+import { syncQuizGradesToGradebook } from '../services/quizService';
 import { ChevronRight, Save, Loader2, CheckCircle, Award, User, Percent, AlertCircle, FileText, Brain, HelpCircle } from 'lucide-react';
 
 export default function GradebookView({ course, role, email, userId }) {
   const [registrations, setRegistrations] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [submissions, setSubmissions] = useState([]);
+  const [quizSubmissions, setQuizSubmissions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [gradesMap, setGradesMap] = useState({}); // regId -> { attendance, midterm, final }
@@ -54,6 +56,15 @@ export default function GradebookView({ course, role, email, userId }) {
     );
     const unsubSubs = onSnapshot(qSubs, snap => {
       setSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    // Fetch all quiz submissions for this course
+    const qQuizSubs = query(
+      collection(db, 'quiz_submissions'),
+      where('courseDocId', '==', course.docId)
+    );
+    const unsubQuizSubs = onSnapshot(qQuizSubs, snap => {
+      setQuizSubmissions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       setLoading(false);
     }, () => setLoading(false));
 
@@ -61,13 +72,45 @@ export default function GradebookView({ course, role, email, userId }) {
       unsubReg();
       unsubAssigns();
       unsubSubs();
+      unsubQuizSubs();
     };
   }, [course.docId]);
 
-  // Helper to calculate student's assignment average score (normalized to scale of 10)
-  const getStudentAssignmentAvg = (studentEmail) => {
-    const studentSubs = submissions.filter(s => s.userEmail === studentEmail && s.status === 'graded');
+  // Helper to get latest submission for a student and assignment
+  const getLatestSubmission = (studentEmail, assignmentId) => {
+    const studentSubs = submissions.filter(s => s.userEmail === studentEmail && s.assignmentId === assignmentId);
     if (studentSubs.length === 0) return null;
+
+    // Sort by submittedAt timestamp (descending) to get latest
+    return studentSubs.sort((a, b) => {
+      const timeA = a.submittedAt?.toDate ? a.submittedAt.toDate() : (a.submittedAt ? new Date(a.submittedAt) : new Date(0));
+      const timeB = b.submittedAt?.toDate ? b.submittedAt.toDate() : (b.submittedAt ? new Date(b.submittedAt) : new Date(0));
+      return timeB - timeA;
+    })[0];
+  };
+
+  // Helper to get attempt count for a student and assignment
+  const getAttemptCount = (studentEmail, assignmentId) => {
+    return submissions.filter(s => s.userEmail === studentEmail && s.assignmentId === assignmentId).length;
+  };
+
+  // Helper to get latest quiz submission for a student and quiz
+  const getLatestQuizSubmission = (studentEmail, quizId) => {
+    const studentQuizSubs = quizSubmissions.filter(s => s.studentEmail === studentEmail && s.quizId === quizId);
+    if (studentQuizSubs.length === 0) return null;
+
+    // Sort by submittedAt timestamp (descending) to get latest
+    return studentQuizSubs.sort((a, b) => {
+      const timeA = a.submittedAt?.toDate ? a.submittedAt.toDate() : (a.submittedAt ? new Date(a.submittedAt) : new Date(0));
+      const timeB = b.submittedAt?.toDate ? b.submittedAt.toDate() : (b.submittedAt ? new Date(b.submittedAt) : new Date(0));
+      return timeB - timeA;
+    })[0];
+  };
+
+  // Helper to calculate student's assignment + quiz average score (normalized to scale of 10)
+  const getStudentAssignmentAvg = (studentEmail) => {
+    // Get latest submission for each assignment
+    const latestSubs = assignments.map(a => getLatestSubmission(studentEmail, a.id)).filter(s => s && s.status === 'graded');
 
     let totalPtsScored = 0;
     let count = 0;
@@ -75,10 +118,22 @@ export default function GradebookView({ course, role, email, userId }) {
     const assignsMap = {};
     assignments.forEach(a => { assignsMap[a.id] = a.points || 10; });
 
-    studentSubs.forEach(s => {
+    latestSubs.forEach(s => {
       const maxPts = assignsMap[s.assignmentId] || 10;
       if (s.score !== undefined && s.score !== null) {
         totalPtsScored += (s.score / maxPts) * 10;
+        count++;
+      }
+    });
+
+    // Add quiz scores to the average (quizzes are out of 100, normalize to 10)
+    // Group quiz submissions by quizId to get latest for each
+    const quizIds = [...new Set(quizSubmissions.filter(s => s.studentEmail === studentEmail).map(s => s.quizId))];
+    quizIds.forEach(quizId => {
+      const latestQuizSub = getLatestQuizSubmission(studentEmail, quizId);
+      if (latestQuizSub && latestQuizSub.score !== undefined && latestQuizSub.score !== null) {
+        // Normalize quiz score (out of 100) to scale of 10
+        totalPtsScored += (latestQuizSub.score / 100) * 10;
         count++;
       }
     });
@@ -165,6 +220,24 @@ export default function GradebookView({ course, role, email, userId }) {
       });
 
       await batch.commit();
+
+      // Sync each student's grades to student_grades transcript
+      for (const regId of Object.keys(gradesMap)) {
+        const reg = registrations.find(r => r.id === regId);
+        if (!reg) continue;
+        const { attendance, midterm, final: fin } = gradesMap[regId];
+        const aiAtt = getStudentAssignmentAvg(reg.studentEmail);
+        const attScore = aiAtt !== null ? aiAtt : (attendance === '' ? null : Number(attendance));
+        const midScore = midterm === '' ? null : Number(midterm);
+        const finScore = fin === '' ? null : Number(fin);
+        await syncQuizGradesToGradebook(reg.studentEmail, course.docId, {
+          attendanceScore: attScore,
+          midtermScore: midScore,
+          finalScore: finScore,
+          gradeStatus: 'lecturer_saved'
+        });
+      }
+
       setToast('Đã lưu điểm số thành công!');
       setTimeout(() => setToast(null), 2500);
     } catch(e) {
@@ -206,6 +279,24 @@ export default function GradebookView({ course, role, email, userId }) {
       });
 
       await batch.commit();
+
+      // Sync each student's grades to student_grades transcript
+      for (const regId of Object.keys(gradesMap)) {
+        const reg = registrations.find(r => r.id === regId);
+        if (!reg) continue;
+        const { attendance, midterm, final: fin } = gradesMap[regId];
+        const aiAtt = getStudentAssignmentAvg(reg.studentEmail);
+        const attScore = aiAtt !== null ? aiAtt : (attendance === '' ? 0 : Number(attendance));
+        const midScore = midterm === '' ? 0 : Number(midterm);
+        const finScore = fin === '' ? 0 : Number(fin);
+        await syncQuizGradesToGradebook(reg.studentEmail, course.docId, {
+          attendanceScore: attScore,
+          midtermScore: midScore,
+          finalScore: finScore,
+          gradeStatus: 'admin_published'
+        });
+      }
+
       setToast('Đã công bố điểm cho lớp học!');
       setTimeout(() => setToast(null), 2500);
     } catch(e) {
@@ -236,8 +327,9 @@ export default function GradebookView({ course, role, email, userId }) {
     const myReg = registrations.find(r => r.userId === userId);
     const hasPublished = myReg?.gradeStatus === 'admin_published';
     const myAssignments = assignments.map(a => {
-      const sub = submissions.find(s => s.assignmentId === a.id && s.userId === userId);
-      return { ...a, sub };
+      const sub = getLatestSubmission(email, a.id);
+      const attemptCount = getAttemptCount(email, a.id);
+      return { ...a, sub, attemptCount };
     });
     const myAvg = getStudentAssignmentAvg(email);
     
@@ -326,9 +418,16 @@ export default function GradebookView({ course, role, email, userId }) {
                         <div key={a.id} style={{ background: '#12141a', border: '1px solid #2a2d38', borderRadius: 8, padding: 14 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                             <div style={{ fontWeight: 600, color: '#fff' }}>{a.title}</div>
-                            <span style={{ fontWeight: 700, color: hasGraded ? '#10b981' : '#f59e0b', fontSize: 13 }}>
-                              {hasGraded ? `${a.sub.score}/${a.points}đ` : (a.sub ? 'Chờ chấm điểm' : 'Chưa nộp')}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              {a.attemptCount > 1 && (
+                                <span style={{ fontSize: 10, color: '#6b7280', background: '#2a2d38', padding: '2px 6px', borderRadius: 4 }}>
+                                  {a.attemptCount} lần nộp
+                                </span>
+                              )}
+                              <span style={{ fontWeight: 700, color: hasGraded ? '#10b981' : '#f59e0b', fontSize: 13 }}>
+                                {hasGraded ? `${a.sub.score}/${a.points}đ` : (a.sub ? 'Chờ chấm điểm' : 'Chưa nộp')}
+                              </span>
+                            </div>
                           </div>
                           {a.sub?.feedback ? (
                             <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(99,102,241,0.03)', border: '1px dashed rgba(99,102,241,0.2)', borderRadius: 6, fontSize: 11.5, color: '#c7d2fe', lineHeight: 1.4 }}>
@@ -421,14 +520,22 @@ export default function GradebookView({ course, role, email, userId }) {
 
                         {/* Individual Assignment Scores */}
                         {assignments.map(a => {
-                          const sub = submissions.find(s => s.assignmentId === a.id && s.userEmail === r.studentEmail);
+                          const sub = getLatestSubmission(r.studentEmail, a.id);
+                          const attemptCount = getAttemptCount(r.studentEmail, a.id);
                           const isSubGraded = sub?.status === 'graded';
                           return (
                             <td key={a.id} style={{ ...s.td, textAlign: 'center', fontSize: 12 }}>
                               {sub ? (
-                                <span style={{ color: isSubGraded ? '#10b981' : '#f59e0b', fontWeight: isSubGraded ? 'bold' : 'normal' }}>
-                                  {isSubGraded ? `${sub.score}/${a.points}` : 'Chờ chấm'}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                                  <span style={{ color: isSubGraded ? '#10b981' : '#f59e0b', fontWeight: isSubGraded ? 'bold' : 'normal' }}>
+                                    {isSubGraded ? `${sub.score}/${a.points}` : 'Chờ chấm'}
+                                  </span>
+                                  {attemptCount > 1 && (
+                                    <span style={{ fontSize: 9, color: '#6b7280' }}>
+                                      {attemptCount} lần
+                                    </span>
+                                  )}
+                                </div>
                               ) : (
                                 <span style={{ color: '#4b5563' }}>-</span>
                               )}

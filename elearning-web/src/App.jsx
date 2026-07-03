@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import { BrowserRouter as Router, useSearchParams } from 'react-router-dom';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, getDoc, getDocs, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import Sidebar from './components/Sidebar';
 import HomeView from './components/HomeView';
@@ -24,6 +24,8 @@ import CourseResourcesView from './components/CourseResourcesView';
 import CourseAssignmentsView from './components/CourseAssignmentsView';
 import GradebookView from './components/GradebookView';
 import StudentRosterView from './components/StudentRosterView';
+import LecturerEvaluationView from './components/LecturerEvaluationView';
+import ForumView from './components/ForumView';
 import { BookOpen, Loader2 } from 'lucide-react';
 
 function ELearningApp() {
@@ -39,11 +41,18 @@ function ELearningApp() {
   const [currentView, setCurrentView] = useState('overview');
 
   useEffect(() => {
+    const viewParam = searchParams.get('view');
+    if (viewParam) {
+      setCurrentView(viewParam);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     if (!userId && !email) { setLoading(false); return; }
 
     if (role === 'student') {
       const q = query(collection(db, 'registrations'), where('userId', '==', userId));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      const unsubscribe = onSnapshot(q, async (snapshot) => {
         const courseMap = new Map();
         snapshot.docs.forEach(doc => {
           const data = doc.data();
@@ -64,12 +73,43 @@ function ELearningApp() {
               duration: data.duration || 0,
               room: data.room || '',
               studentCount: 1,
+              hasGrade: false,
             });
           } else {
             courseMap.get(key).studentCount += 1;
           }
         });
-        setCourses(Array.from(courseMap.values()));
+
+        // Check for grades for each course
+        const coursesWithGrades = Array.from(courseMap.values());
+        for (const course of coursesWithGrades) {
+          // Check registration grades
+          const regDoc = await getDoc(doc(db, 'registrations', `${userId}_${course.docId}`));
+          if (regDoc.exists()) {
+            const regData = regDoc.data();
+            if (regData.attendanceScore !== undefined || regData.midtermScore !== undefined || regData.finalScore !== undefined) {
+              course.hasGrade = true;
+              continue;
+            }
+          }
+
+          // Check quiz submissions
+          const qQuiz = query(collection(db, 'quiz_submissions'), where('courseDocId', '==', course.docId), where('studentEmail', '==', email));
+          const quizSnap = await getDocs(qQuiz);
+          if (!quizSnap.empty) {
+            course.hasGrade = true;
+            continue;
+          }
+
+          // Check assignment submissions
+          const qAssign = query(collection(db, 'elearning_submissions'), where('courseDocId', '==', course.docId), where('userEmail', '==', email));
+          const assignSnap = await getDocs(qAssign);
+          if (!assignSnap.empty) {
+            course.hasGrade = true;
+          }
+        }
+
+        setCourses(coursesWithGrades);
         setLoading(false);
       }, (error) => {
         console.error('Error fetching courses:', error);
@@ -227,10 +267,19 @@ function ELearningApp() {
         return selectedCourse ? (
           <StudentRosterView course={selectedCourse} role={role} email={email} />
         ) : null;
+      case 'forum':
+        return <ForumView />;
+      case 'lecturer_evaluation':
+        return <LecturerEvaluationView role={role} email={email} />;
       default:
         return <HomeView courses={courses} role={role} email={email} onSelectCourse={handleSelectCourse} />;
     }
   };
+
+  // Forum is standalone, not part of e-learning layout
+  if (currentView === 'forum') {
+    return <ForumView />;
+  }
 
   return (
     <div className="app-container">

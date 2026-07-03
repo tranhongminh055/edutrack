@@ -1,7 +1,7 @@
 import React from 'react';
-import { 
-  Home, LayoutDashboard, Users, Calendar, FolderOpen, Bell, Settings, 
-  UserCircle, ChevronRight, ChevronDown, ChevronLeft, Pin, Clock, Loader2, BookOpen 
+import {
+  Home, LayoutDashboard, Users, Calendar, FolderOpen, Bell, Settings,
+  UserCircle, ChevronRight, ChevronDown, ChevronLeft, Pin, Clock, Loader2, BookOpen, MessageSquare, CheckCircle, FileText
 } from 'lucide-react';
 
 export default function Sidebar({ courses, selectedCourse, onSelectCourse, onNavClick, onViewAllSites, currentView, loading, role }) {
@@ -12,6 +12,7 @@ export default function Sidebar({ courses, selectedCourse, onSelectCourse, onNav
     { icon: <Calendar size={15} />, label: 'Calendar', id: 'calendar' },
     { icon: <FolderOpen size={15} />, label: 'Resources', id: 'resources' },
     { icon: <Bell size={15} />, label: 'Announcements', id: 'announcements' },
+    { icon: <FileText size={15} />, label: 'Phiếu Đánh Giá', id: 'lecturer_evaluation' },
     { icon: <Settings size={15} />, label: 'Worksite Setup', id: 'worksite_setup' },
     { icon: <UserCircle size={15} />, label: 'Preferences', id: 'preferences' },
     { icon: <UserCircle size={15} />, label: 'Account', id: 'account' },
@@ -139,6 +140,9 @@ export default function Sidebar({ courses, selectedCourse, onSelectCourse, onNav
                         <span className="sakai-course-name">{course.courseName}</span>
                         <span className="sakai-course-meta">({course.classGroup})</span>
                       </div>
+                      {role === 'student' && course.hasGrade && (
+                        <CheckCircle size={14} style={{ color: '#22c55e', marginLeft: 'auto' }} title="Đã có điểm" />
+                      )}
                       <span className="sakai-pin-btn" title="Pin">
                         <Pin size={12} />
                       </span>

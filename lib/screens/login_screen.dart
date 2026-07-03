@@ -190,7 +190,7 @@ class _LoginScreenState extends State<LoginScreen>
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 30,
                               offset: const Offset(0, 15),
                             )
@@ -240,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen>
           const SizedBox(height: 12),
           Text('Hệ thống quản lý giáo dục thông minh', 
             style: TextStyle(
-              color: Colors.white.withOpacity(0.9), 
+              color: Colors.white.withValues(alpha: 0.9), 
               fontSize: 16,
               fontWeight: FontWeight.w500,
             )
@@ -252,7 +252,7 @@ class _LoginScreenState extends State<LoginScreen>
             height: 120,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
             ),
             child: Center(
               child: Container(
@@ -260,10 +260,10 @@ class _LoginScreenState extends State<LoginScreen>
                 height: 80,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1.5),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.3), width: 1.5),
                 ),
                 child: Center(
-                  child: Icon(Icons.hub_rounded, size: 40, color: Colors.white.withOpacity(0.7)),
+                  child: Icon(Icons.hub_rounded, size: 40, color: Colors.white.withValues(alpha: 0.7)),
                 ),
               ),
             ),
@@ -272,7 +272,7 @@ class _LoginScreenState extends State<LoginScreen>
           Text('Theo dõi tiến độ học tập, quản lý lớp học và kết nối cộng đồng giáo dục', 
             textAlign: TextAlign.center, 
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6), 
+              color: Colors.white.withValues(alpha: 0.6), 
               fontSize: 13,
               height: 1.5,
             )

@@ -15,12 +15,45 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
   const [lastResult, setLastResult] = useState(null);
   const [cameraAllowed, setCameraAllowed] = useState(false);
   const [violationCount, setViolationCount] = useState(0);
+  const [cheatingAlert, setCheatingAlert] = useState(null);
+  const [isBanned, setIsBanned] = useState(false);
   const [aiResult, setAiResult] = useState(null);
+  const [screenShareRequired, setScreenShareRequired] = useState(false);
+  const [requestingPermissions, setRequestingPermissions] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const timerRef = useRef(null);
   const activeStreamRef = useRef(null);
   const activeSessionIntervalRef = useRef(null);
   const screenStreamRef = useRef(null);
   const screenIntervalRef = useRef(null);
+
+  // Reusable canvas refs to avoid GC pressure from creating new canvases every frame
+  const cameraCanvasRef = useRef(null);
+  const screenCanvasRef = useRef(null);
+  
+  // Proctoring Refs
+  const violationCountRef = useRef(0);
+  const handleSubmitRef = useRef(null);
+  useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
+
+  // Update current time every minute to check quiz availability
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Detect mobile device
+  useEffect(() => {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+    const mobile = /android|ipad|iphone|ipod/i.test(userAgent) || window.innerWidth <= 768;
+    setIsMobile(mobile);
+  }, []);
 
   // Fetch existing attempts (read from quiz_submissions)
   useEffect(() => {
@@ -69,20 +102,19 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
 
   // Camera & tab surveillance logic (Student only)
   useEffect(() => {
-    if (viewMode !== 'take' || role !== 'student') return;
+    // Only start surveillance if viewMode is 'take' AND stream is already obtained from handleStartQuiz
+    if (viewMode !== 'take' || role !== 'student' || !activeStreamRef.current) return;
 
     let localStream = null;
     let localInterval = null;
+    let isCapturing = false; // Prevent overlapping captures
 
     const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 320, height: 240, frameRate: { max: 15 } },
-          audio: false
-        });
-        localStream = stream;
-        activeStreamRef.current = stream;
+      // Use existing stream from handleStartQuiz only
+      const stream = activeStreamRef.current;
+      if (!stream) return;
 
+      try {
         let video = document.getElementById('hidden-surveillance-video');
         if (!video) {
           video = document.createElement('video');
@@ -90,15 +122,34 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
           video.autoplay = true;
           video.playsInline = true;
           video.muted = true;
-          video.style.position = 'absolute';
-          video.style.width = '1px';
-          video.style.height = '1px';
-          video.style.opacity = '0';
-          video.style.pointerEvents = 'none';
+          video.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;top:-10px;left:-10px;';
           document.body.appendChild(video);
         }
         video.srcObject = stream;
+        await video.play().catch(() => {}); // Ensure playback starts
         setCameraAllowed(true);
+
+        // Also connect to visible preview
+        setTimeout(() => {
+          const previewVideo = document.getElementById('student-camera-preview');
+          if (previewVideo) {
+            previewVideo.srcObject = stream;
+            previewVideo.play().catch(() => {});
+          }
+        }, 500);
+
+        // Initialize reusable canvas for camera
+        const camW = isMobile ? 160 : 320;
+        const camH = isMobile ? 120 : 240;
+        if (!cameraCanvasRef.current) {
+          const canvas = document.createElement('canvas');
+          canvas.width = camW;
+          canvas.height = camH;
+          cameraCanvasRef.current = canvas;
+        } else {
+          cameraCanvasRef.current.width = camW;
+          cameraCanvasRef.current.height = camH;
+        }
 
         const sessionRef = doc(db, 'elearning_active_sessions', `${userId}_${quiz.id}`);
         await setDoc(sessionRef, {
@@ -110,47 +161,41 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
           lastActive: serverTimestamp(),
           liveFrame: '',
           status: 'safe',
-          ended: false
+          deviceType: isMobile ? 'mobile' : 'desktop'
         });
 
         localInterval = setInterval(async () => {
-          if (!video.videoWidth) return;
+          if (!video.videoWidth || isCapturing) return;
+          isCapturing = true;
           try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 320;
-            canvas.height = 240;
+            const canvas = cameraCanvasRef.current;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, 320, 240);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-            // Subtle "AI Face Detection Box" overlay to make it look futuristic
+            // Subtle "AI Face Detection Box" overlay
             ctx.strokeStyle = '#22c55e';
-            ctx.lineWidth = 1.5;
-            ctx.strokeRect(90, 50, 140, 140);
+            ctx.lineWidth = 2;
+            const bx = Math.round(canvas.width * 0.25);
+            const by = Math.round(canvas.height * 0.25);
+            ctx.strokeRect(bx, by, canvas.width * 0.5, canvas.height * 0.5);
 
-            ctx.fillStyle = '#22c55e';
-            ctx.font = 'bold 9px Arial';
-            ctx.fillText('PROCTORING: OK', 95, 45);
-
-            const frameData = canvas.toDataURL('image/jpeg', 0.4);
-
+            const frameData = canvas.toDataURL('image/jpeg', 0.25);
             await setDoc(sessionRef, {
-              lastActive: serverTimestamp(),
-              liveFrame: frameData
+              liveFrame: frameData,
+              lastActive: serverTimestamp()
             }, { merge: true });
           } catch (err) {
-            console.error('Capture frame error:', err);
+            console.error('Camera capture error:', err);
+          } finally {
+            isCapturing = false;
           }
-        }, 2000);
+        }, 3000);
         activeSessionIntervalRef.current = localInterval;
       } catch (err) {
-        console.error('Error accessing camera:', err);
-        setCameraAllowed(false);
+        console.warn('Camera surveillance failed:', err);
         await addDoc(collection(db, 'elearning_cheating_logs'), {
-          quizId: quiz.id,
-          quizTitle: quiz.title,
-          courseDocId: quiz.courseDocId,
-          studentId: userId,
-          studentEmail: email,
+          quizId: quiz.id, quizTitle: quiz.title, courseDocId: quiz.courseDocId,
+          studentId: userId, studentEmail: email,
           type: 'camera_blocked',
           message: 'Sinh viên từ chối cấp quyền camera hoặc camera bị chặn.',
           timestamp: serverTimestamp()
@@ -158,18 +203,33 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
       }
     };
 
-    // Screen capture via getDisplayMedia
+    startCamera();
+
+    return () => {
+      if (localInterval) clearInterval(localInterval);
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      const video = document.getElementById('hidden-surveillance-video');
+      if (video) video.remove();
+    };
+  }, [viewMode, role, userId, email, quiz.id, quiz.title, quiz.courseDocId, isMobile]);
+
+  // Screen capture via getDisplayMedia (Both mobile and desktop if available)
+  useEffect(() => {
+    // Start screen capture if stream is available (works on both mobile and desktop)
+    if (viewMode !== 'take' || role !== 'student' || !screenStreamRef.current) return;
+
     let localScreenStream = null;
     let localScreenInterval = null;
-    const startScreenCapture = async () => {
-      try {
-        const screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { width: 640, height: 360, frameRate: { max: 5 } },
-          audio: false
-        });
-        localScreenStream = screenStream;
-        screenStreamRef.current = screenStream;
+    let isScreenCapturing = false; // Prevent overlapping writes
 
+    const startScreenCapture = async () => {
+      // Use existing stream from handleStartQuiz only
+      const screenStream = screenStreamRef.current;
+      if (!screenStream) return;
+
+      try {
         let screenVideo = document.getElementById('hidden-screen-video');
         if (!screenVideo) {
           screenVideo = document.createElement('video');
@@ -177,55 +237,84 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
           screenVideo.autoplay = true;
           screenVideo.playsInline = true;
           screenVideo.muted = true;
-          screenVideo.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;';
+          screenVideo.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0.01;pointer-events:none;top:-10px;left:-10px;';
           document.body.appendChild(screenVideo);
         }
         screenVideo.srcObject = screenStream;
+        await screenVideo.play().catch(() => {}); // Ensure playback starts
+
+        // Also connect to visible preview
+        setTimeout(() => {
+          const previewScreenVideo = document.getElementById('student-screen-preview');
+          if (previewScreenVideo) {
+            previewScreenVideo.srcObject = screenStream;
+            previewScreenVideo.play().catch(() => {});
+          }
+        }, 500);
 
         // When student stops sharing screen, log it
-        screenStream.getVideoTracks()[0].addEventListener('ended', () => {
-          addDoc(collection(db, 'elearning_cheating_logs'), {
-            quizId: quiz.id, quizTitle: quiz.title, courseDocId: quiz.courseDocId,
-            studentId: userId, studentEmail: email,
-            type: 'screen_share_stopped',
-            message: 'Sinh viên đã dừng chia sẻ màn hình.',
-            timestamp: serverTimestamp()
+        const videoTrack = screenStream.getVideoTracks()[0];
+        if (videoTrack) {
+          videoTrack.addEventListener('ended', () => {
+            addDoc(collection(db, 'elearning_cheating_logs'), {
+              quizId: quiz.id, quizTitle: quiz.title, courseDocId: quiz.courseDocId,
+              studentId: userId, studentEmail: email,
+              type: 'screen_share_stopped',
+              message: 'Sinh viên đã dừng chia sẻ màn hình.',
+              timestamp: serverTimestamp()
+            });
           });
-        });
+        }
 
-        const screenSessionRef = doc(db, 'elearning_active_sessions', `screen_${userId}_${quiz.id}`);
+        // Initialize reusable canvas for screen capture
+        const scrW = isMobile ? 160 : 320;
+        const scrH = isMobile ? 90 : 180;
+        if (!screenCanvasRef.current) {
+          const canvas = document.createElement('canvas');
+          canvas.width = scrW;
+          canvas.height = scrH;
+          screenCanvasRef.current = canvas;
+        } else {
+          screenCanvasRef.current.width = scrW;
+          screenCanvasRef.current.height = scrH;
+        }
+
+        const screenSessionRef = doc(db, 'elearning_screen_sessions', `${userId}_${quiz.id}`);
         await setDoc(screenSessionRef, {
           studentId: userId, studentEmail: email,
           quizId: quiz.id, quizTitle: quiz.title,
           courseDocId: quiz.courseDocId,
-          lastActive: serverTimestamp(),
-          liveFrame: '', status: 'safe', ended: false,
-          type: 'screen'
+          screenFrame: '', status: 'active',
+          timestamp: serverTimestamp()
         });
 
+        // Stagger screen interval 1.5s offset from camera to avoid write contention
+        await new Promise(r => setTimeout(r, 1500));
+
         localScreenInterval = setInterval(async () => {
-          if (!screenVideo.videoWidth) return;
+          if (!screenVideo.videoWidth || isScreenCapturing) return;
+          isScreenCapturing = true;
           try {
-            const canvas = document.createElement('canvas');
-            canvas.width = 640;
-            canvas.height = 360;
+            const canvas = screenCanvasRef.current;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(screenVideo, 0, 0, 640, 360);
+            ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
 
             // Overlay label
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
-            ctx.fillRect(0, 0, 200, 22);
+            ctx.fillRect(0, 0, 100, 14);
             ctx.fillStyle = '#22c55e';
-            ctx.font = 'bold 10px Arial';
-            ctx.fillText('SCREEN MONITOR: ACTIVE', 6, 15);
+            ctx.font = 'bold 7px Arial';
+            ctx.fillText('SCREEN', 4, 11);
 
-            const frameData = canvas.toDataURL('image/jpeg', 0.35);
+            const frameData = canvas.toDataURL('image/jpeg', 0.2);
             await setDoc(screenSessionRef, {
-              lastActive: serverTimestamp(),
-              liveFrame: frameData
+              screenFrame: frameData,
+              timestamp: serverTimestamp()
             }, { merge: true });
           } catch (err) {
-            console.error('Screen capture frame error:', err);
+            console.error('Screen capture error:', err);
+          } finally {
+            isScreenCapturing = false;
           }
         }, 3000);
         screenIntervalRef.current = localScreenInterval;
@@ -241,17 +330,9 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
       }
     };
 
-    startCamera();
     startScreenCapture();
 
     return () => {
-      if (localInterval) clearInterval(localInterval);
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-      const video = document.getElementById('hidden-surveillance-video');
-      if (video) video.remove();
-
       if (localScreenInterval) clearInterval(localScreenInterval);
       if (localScreenStream) {
         localScreenStream.getTracks().forEach(track => track.stop());
@@ -259,43 +340,51 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
       const screenVideo = document.getElementById('hidden-screen-video');
       if (screenVideo) screenVideo.remove();
 
-      const sessionRef = doc(db, 'elearning_active_sessions', `${userId}_${quiz.id}`);
-      deleteDoc(sessionRef).catch(err => console.error('Error deleting session:', err));
-      const screenSessionRef = doc(db, 'elearning_active_sessions', `screen_${userId}_${quiz.id}`);
-      deleteDoc(screenSessionRef).catch(err => console.error('Error deleting screen session:', err));
+      const screenSessionRef = doc(db, 'elearning_screen_sessions', `${userId}_${quiz.id}`);
+      deleteDoc(screenSessionRef).catch(() => {});
     };
-  }, [viewMode, role, quiz.id, userId, email]);
+  }, [viewMode, role, quiz.id, userId, email, isMobile, screenStreamRef]);
 
   // Tab Switching & Blur surveillance detection (Student only)
   useEffect(() => {
     if (viewMode !== 'take' || role !== 'student') return;
 
-    let currentViolationCount = 0;
-
     const triggerCheatingLog = async (messageText) => {
-      currentViolationCount += 1;
-      setViolationCount(currentViolationCount);
+      violationCountRef.current += 1;
+      const currentViolation = violationCountRef.current;
+      setViolationCount(currentViolation);
 
-      // Play Beep Sound
+      // Show alert toast on the top-right of the screen
+      setCheatingAlert({ message: messageText, count: currentViolation });
+
+      // Play Beep Alarm Sound
       try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.6);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.6);
+        const playTone = (freq, start, duration) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.frequency.setValueAtTime(freq, start);
+          gain.gain.setValueAtTime(0.5, start);
+          gain.gain.exponentialRampToValueAtTime(0.01, start + duration);
+          osc.start(start);
+          osc.stop(start + duration);
+        };
+        playTone(987.77, audioCtx.currentTime, 0.3); // B5
+        playTone(987.77, audioCtx.currentTime + 0.35, 0.3);
       } catch (err) {
-        console.error('Error playing beep:', err);
+        console.error('Error playing alarm beep:', err);
       }
 
       // Voice Warning in Vietnamese (Speech Synthesis)
       try {
         window.speechSynthesis.cancel();
-        const utterance = new SpeechSynthesisUtterance("Cảnh báo! Bạn vừa rời khỏi màn hình bài thi. Hành vi này đã bị ghi nhận và báo cáo cho giảng viên.");
+        const utterance = new SpeechSynthesisUtterance(
+          currentViolation >= 3
+            ? "Bạn đã bị đình chỉ thi do vi phạm quy chế quá ba lần. Bài thi sẽ tự động nộp."
+            : "Vui lòng nghiêm túc."
+        );
         utterance.lang = 'vi-VN';
         utterance.rate = 0.95;
         window.speechSynthesis.speak(utterance);
@@ -339,16 +428,24 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
           studentId: userId,
           studentEmail: email,
           type: 'tab_switch',
-          message: `${messageText} (Lần ${currentViolationCount})`,
+          message: `${messageText} (Lần ${currentViolation})`,
           evidenceUrl: evidenceUrl,
           timestamp: serverTimestamp()
         });
 
-        // Set session state to 'cheating'
+        // Set session state to 'cheating' or 'banned'
         const sessionRef = doc(db, 'elearning_active_sessions', `${userId}_${quiz.id}`);
-        await setDoc(sessionRef, { status: 'cheating' }, { merge: true });
+        await setDoc(sessionRef, { status: currentViolation >= 3 ? 'banned' : 'cheating' }, { merge: true });
       } catch (err) {
         console.error('Error logging cheating event:', err);
+      }
+
+      // If violation count exceeds 3, trigger auto-submit and lock the student
+      if (currentViolation >= 3) {
+        setIsBanned(true);
+        if (handleSubmitRef.current) {
+          await handleSubmitRef.current();
+        }
       }
     };
 
@@ -370,6 +467,14 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
       window.removeEventListener('blur', handleWindowBlur);
     };
   }, [viewMode, role, quiz.id, userId, email]);
+
+  // Auto-dismiss cheating alert toast after 5 seconds
+  useEffect(() => {
+    if (cheatingAlert) {
+      const timer = setTimeout(() => setCheatingAlert(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [cheatingAlert]);
 
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -404,13 +509,17 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
         userId,
         studentEmail: email,
         answers: normalizedAnswers,
-        answersMap: quiz.format !== 'multiple_choice' ? answers : null
+        answersMap: quiz.format !== 'multiple_choice' ? answers : null,
+        courseDocId: quiz.courseDocId
       });
+
+      // Sync grades to gradebook
+      await quizService.syncQuizGradesToGradebook(email, quiz.courseDocId, result.score);
 
       // Delete active sessions
       try {
         await deleteDoc(doc(db, 'elearning_active_sessions', `${userId}_${quiz.id}`));
-        await deleteDoc(doc(db, 'elearning_active_sessions', `screen_${userId}_${quiz.id}`));
+        await deleteDoc(doc(db, 'elearning_screen_sessions', `${userId}_${quiz.id}`));
       } catch (e) {
         console.error('Error deleting session on submit:', e);
       }
@@ -424,7 +533,14 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
       }
 
       if (result.aiFeedback) {
-        setAiResult({ score: result.score, feedback: result.aiFeedback, perQuestion: result.aiPerQuestion });
+        setAiResult({
+          score: result.score,
+          feedback: result.aiFeedback,
+          perQuestion: result.aiPerQuestion,
+          qualityMetrics: result.qualityMetrics,
+          plagiarismScore: result.plagiarismScore,
+          plagiarismWarning: result.plagiarismWarning
+        });
       }
 
       setLastResult({ score: quiz.format === 'multiple_choice' ? score : result.score, totalQuestions });
@@ -455,15 +571,133 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
     'essay': 'Tự luận',
   };
 
-  const now = new Date();
+  const handleStartQuiz = async () => {
+    violationCountRef.current = 0;
+    setViolationCount(0);
+    setIsBanned(false);
+    setCheatingAlert(null);
+
+    if (role !== 'student') {
+      setViewMode('take');
+      setAnswers({});
+      setSubmitted(false);
+      setTimeLeft(quiz.timeLimitMinutes > 0 ? quiz.timeLimitMinutes * 60 : null);
+      return;
+    }
+
+    // Require camera for all devices, screen share only for desktop
+    setRequestingPermissions(true);
+    try {
+      // 1. Request camera first (required for all devices)
+      alert('Bước 1: Vui lòng bấm "Cho phép" (Allow) để cấp quyền camera cho hệ thống giám sát.');
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: isMobile ? { ideal: 320 } : { ideal: 640 },
+          height: isMobile ? { ideal: 240 } : { ideal: 480 },
+          facingMode: 'user'
+        },
+        audio: false
+      });
+      activeStreamRef.current = cameraStream;
+
+      // 2. Request screen share (try on both mobile and desktop)
+      try {
+        if (isMobile) {
+          alert('Bước 2: Vui lòng chọn màn hình thiết bị để giám sát.');
+        } else {
+          alert('Bước 2: Vui lòng chọn "Toàn màn hình" (Entire Screen) và bấm "Chia sẻ" (Share) để giám sát màn hình.');
+        }
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            cursor: isMobile ? "never" : "always",
+            width: isMobile ? { ideal: 320 } : { ideal: 640 },
+            height: isMobile ? { ideal: 180 } : { ideal: 360 }
+          },
+          audio: false
+        });
+        screenStreamRef.current = screenStream;
+
+        // When student stops sharing, prevent quiz taking
+        screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+          alert('Bạn đã dừng chia sẻ màn hình. Bài kiểm tra sẽ bị hủy.');
+          setViewMode('info');
+          if (screenStreamRef.current) {
+            screenStreamRef.current.getTracks().forEach(track => track.stop());
+          }
+          if (activeStreamRef.current) {
+            activeStreamRef.current.getTracks().forEach(track => track.stop());
+          }
+        });
+      } catch (screenErr) {
+        console.warn('Screen share not available:', screenErr);
+        if (isMobile) {
+          alert('Thiết bị của bạn không hỗ trợ chia sẻ màn hình. Hệ thống sẽ chỉ giám sát qua camera.');
+        } else {
+          throw screenErr; // Re-throw for desktop - screen share is required
+        }
+      }
+
+      // Now start the quiz
+      setViewMode('take');
+      setAnswers({});
+      setSubmitted(false);
+      setTimeLeft(quiz.timeLimitMinutes > 0 ? quiz.timeLimitMinutes * 60 : null);
+    } catch (err) {
+      console.error('Camera or screen share denied:', err);
+      alert(isMobile
+        ? 'Bạn phải cấp quyền camera để bắt đầu làm bài kiểm tra. Hãy thử lại và bấm "Cho phép".'
+        : 'Bạn phải cấp quyền camera và chia sẻ toàn màn hình để bắt đầu làm bài kiểm tra. Hãy thử lại và bấm "Cho phép" / "Chia sẻ".');
+      // Clean up if partial success
+      if (activeStreamRef.current) {
+        activeStreamRef.current.getTracks().forEach(track => track.stop());
+        activeStreamRef.current = null;
+      }
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach(track => track.stop());
+        screenStreamRef.current = null;
+      }
+    } finally {
+      setRequestingPermissions(false);
+    }
+  };
+
   const openTimeDate = quiz.openTime?.toDate ? quiz.openTime.toDate() : (quiz.openTime ? new Date(quiz.openTime) : null);
   const closeTimeDate = quiz.closeTime?.toDate ? quiz.closeTime.toDate() : (quiz.closeTime ? new Date(quiz.closeTime) : null);
 
-  const isNotOpenYet = openTimeDate && now < openTimeDate;
-  const isClosedAlready = closeTimeDate && now > closeTimeDate;
+  // If no time limits set, quiz is always available
+  const hasTimeLimits = openTimeDate || closeTimeDate;
+
+  const isNotOpenYet = hasTimeLimits && openTimeDate && currentTime < openTimeDate;
+  const isClosedAlready = hasTimeLimits && closeTimeDate && currentTime > closeTimeDate;
   const isTimeValid = !isNotOpenYet && !isClosedAlready;
 
   const hasAttempted = attempts.length > 0;
+
+  // ============ BANNED VIEW ============
+  if (isBanned) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center p-8 bg-gray-950 text-white min-h-[500px]">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-3xl p-8 max-w-md text-center shadow-2xl space-y-6">
+          <div className="w-20 h-20 bg-red-500/25 text-red-500 rounded-full flex items-center justify-center mx-auto border border-red-500/40 animate-pulse">
+            <AlertTriangle className="w-10 h-10" />
+          </div>
+          <h2 className="text-2xl font-bold text-red-400">ĐÌNH CHỈ THI</h2>
+          <p className="text-gray-300 text-sm leading-relaxed">
+            Bạn đã vi phạm quy chế thi (chuyển tab hoặc rời khỏi trang thi) quá 3 lần. Hệ thống đã đình chỉ quyền làm bài và tự động nộp bài làm hiện tại của bạn.
+          </p>
+          <div className="p-4 bg-gray-900/50 rounded-xl text-xs text-gray-400 border border-gray-800">
+            Hành vi vi phạm đã được ghi nhận và báo cáo chi tiết đến giảng viên lớp học.
+          </div>
+          <button 
+            onClick={() => { setIsBanned(false); setViewMode('info'); }} 
+            className="w-full py-3 bg-red-600 hover:bg-red-500 text-white font-semibold rounded-xl transition-colors shadow-lg shadow-red-900/40"
+          >
+            Quay lại trang thông tin
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // ============ INFO VIEW ============
   if (viewMode === 'info') {
@@ -521,20 +755,24 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
               )}
 
               <button
-                disabled={!isTimeValid}
-                onClick={() => {
-                  setViewMode('take');
-                  setAnswers({});
-                  setSubmitted(false);
-                  setTimeLeft(quiz.timeLimitMinutes > 0 ? quiz.timeLimitMinutes * 60 : null);
-                }}
-                className={`px-8 py-3 rounded-xl font-semibold text-lg flex items-center space-x-3 transition-all ${isTimeValid
+                disabled={!isTimeValid || requestingPermissions}
+                onClick={handleStartQuiz}
+                className={`px-8 py-3 rounded-xl font-semibold text-lg flex items-center space-x-3 transition-all ${isTimeValid && !requestingPermissions
                   ? 'bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white shadow-lg shadow-blue-900/40 cursor-pointer'
                   : 'bg-gray-700 text-gray-500 cursor-not-allowed opacity-50'
                   }`}
               >
-                <FileText className="w-5 h-5" />
-                <span>{hasAttempted ? 'Làm lại bài thi' : 'Bắt đầu làm bài'}</span>
+                {requestingPermissions ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Đang yêu cầu quyền...</span>
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-5 h-5" />
+                    <span>{hasAttempted ? 'Làm lại bài thi' : 'Bắt đầu làm bài'}</span>
+                  </>
+                )}
               </button>
 
               {isTimeValid && (
@@ -614,8 +852,8 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
                         {role === 'lecturer' && <td className="py-3 text-gray-300">{att.studentEmail || 'N/A'}</td>}
                         {quiz.format === 'multiple_choice' && (
                           <td className="py-3">
-                            <span className={`font-bold ${att.score / att.totalQuestions >= 0.5 ? 'text-green-400' : 'text-red-400'}`}>
-                              {att.score}/{att.totalQuestions}
+                            <span className={`font-bold ${(att.score || 0) >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                              {Math.round(((att.score || 0) / 100) * (att.totalQuestions || 1))}/{att.totalQuestions || 1}
                             </span>
                           </td>
                         )}
@@ -663,7 +901,21 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
   // ============ TAKE VIEW (Student Only) ============
   if (viewMode === 'take') {
     return (
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        {/* Cheating Alert Toast */}
+        {cheatingAlert && (
+          <div className="fixed top-6 right-6 z-50 animate-bounce flex items-center space-x-3 bg-red-600 text-white px-5 py-4 rounded-2xl shadow-2xl border border-red-500 max-w-sm">
+            <div className="p-2 bg-red-700 rounded-lg">
+              <AlertTriangle className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <div className="font-bold text-sm">CẢNH BÁO VI PHẠM!</div>
+              <div className="text-xs opacity-90 mt-0.5">{cheatingAlert.message}</div>
+              <div className="text-xs font-semibold mt-1 bg-red-800 px-2 py-0.5 rounded-md inline-block">Lần vi phạm: {cheatingAlert.count}/3</div>
+            </div>
+          </div>
+        )}
+
         {/* Sticky Header with Timer */}
         <div className="p-5 border-b border-gray-700/50 bg-gray-800/50 backdrop-blur-md shrink-0">
           <div className="flex items-center justify-between">
@@ -673,12 +925,20 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
               </button>
               <h2 className="text-lg font-bold text-white">{quiz.title}</h2>
             </div>
-            {timeLeft !== null && (
-              <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-mono text-lg font-bold ${timeLeft < 60 ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' : 'bg-gray-700/50 text-white border border-gray-600/50'}`}>
-                <Clock className="w-5 h-5" />
-                <span>{formatTime(timeLeft)}</span>
-              </div>
-            )}
+            <div className="flex items-center space-x-3">
+              {role === 'student' && (
+                <div className="flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 animate-pulse text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>ĐANG GIÁM SÁT MÀN HÌNH</span>
+                </div>
+              )}
+              {timeLeft !== null && (
+                <div className={`flex items-center space-x-2 px-4 py-2 rounded-xl font-mono text-lg font-bold ${timeLeft < 60 ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse' : 'bg-gray-700/50 text-white border border-gray-600/50'}`}>
+                  <Clock className="w-5 h-5" />
+                  <span>{formatTime(timeLeft)}</span>
+                </div>
+              )}
+            </div>
           </div>
           {/* Progress bar */}
           <div className="mt-3 h-1.5 bg-gray-700 rounded-full overflow-hidden">
@@ -691,6 +951,34 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
             Đã trả lời {Object.keys(answers).filter(k => answers[k] !== undefined && answers[k] !== '').length}/{quiz.questions?.length || 0} câu
           </p>
         </div>
+
+        {/* Camera & Screen Preview for Students - Hidden from students, only visible to lecturers */}
+        {role !== 'student' && (
+          <div className="px-6 py-3 bg-gray-900/30 border-b border-gray-700/30 flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-2 text-xs text-gray-400">
+                <Camera className="w-4 h-4 text-green-400" />
+                <span>Camera: <span className="text-green-400">Đang hoạt động</span></span>
+              </div>
+              {screenStreamRef.current && (
+                <div className="flex items-center space-x-2 text-xs text-gray-400">
+                  <Monitor className="w-4 h-4 text-green-400" />
+                  <span>Màn hình: <span className="text-green-400">Đang chia sẻ</span></span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-16 h-12 bg-black rounded border border-gray-600 overflow-hidden">
+                <video id="student-camera-preview" autoPlay muted playsInline className="w-full h-full object-cover" style={{ transform: 'scaleX(-1)' }} />
+              </div>
+              {screenStreamRef.current && (
+                <div className="w-24 h-12 bg-black rounded border border-gray-600 overflow-hidden">
+                  <video id="student-screen-preview" autoPlay muted playsInline className="w-full h-full object-cover" />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Questions */}
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -781,8 +1069,11 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
 
   // ============ RESULT VIEW ============
   if (viewMode === 'result' && lastResult) {
+    const rawScore = lastResult.score > lastResult.totalQuestions
+      ? Math.round((lastResult.score / 100) * lastResult.totalQuestions)
+      : lastResult.score;
     const percent = quiz.format === 'multiple_choice'
-      ? Math.round((lastResult.score / lastResult.totalQuestions) * 100)
+      ? Math.round((rawScore / lastResult.totalQuestions) * 100)
       : (aiResult ? aiResult.score : null);
     const isPass = percent !== null && percent >= 50;
     return (
@@ -812,7 +1103,7 @@ export default function TakeQuizView({ quiz, role, userId, email, onBack }) {
 
             {quiz.format === 'multiple_choice' && (
               <div className="my-6">
-                <div className="text-5xl font-black text-white">{lastResult.score}/{lastResult.totalQuestions}</div>
+                <div className="text-5xl font-black text-white">{rawScore}/{lastResult.totalQuestions}</div>
                 <div className="text-lg text-gray-400 mt-1">{percent}% đúng</div>
               </div>
             )}
