@@ -39,6 +39,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
   String _uploadMajor = 'Kỹ thuật phần mềm';
   DateTime? _uploadDeadline;
 
+  // Tuition Management states
+  int _tuitionTab = 0; // 0: Đơn giá, 1: Tính học phí
+  bool _ratesLoaded = false;
+  final Map<String, TextEditingController> _creditControllers = {};
+  final Map<String, TextEditingController> _courseControllers = {};
+  final Map<String, TextEditingController> _baseControllers = {};
+  String _calcYear = '2025-2026';
+  String _calcSemester = 'Học kỳ 1';
+  bool _calculating = false;
+  String _tuitionSearchQuery = '';
+  final TextEditingController _tuitionSearchCtrl = TextEditingController();
+
   final List<Map<String, dynamic>> _menus = [
     {'icon': Icons.dashboard, 'label': 'Tổng quan'},
     {'icon': Icons.campaign, 'label': 'Gửi Thông báo'},
@@ -49,12 +61,24 @@ class _AdminDashboardState extends State<AdminDashboard> {
     {'icon': Icons.app_registration, 'label': 'Quản lý môn ĐK'},
     {'icon': Icons.analytics, 'label': 'Theo dõi ĐK'},
     {'icon': Icons.support_agent, 'label': 'Phê duyệt đổi Cố vấn'},
+    {'icon': Icons.poll, 'label': 'Form Đánh giá GV'},
+    {'icon': Icons.payment, 'label': 'Quản lý Học phí'},
   ];
 
   @override
   void dispose() {
     _titleCtrl.dispose();
     _contentCtrl.dispose();
+    _tuitionSearchCtrl.dispose();
+    for (var ctrl in _creditControllers.values) {
+      ctrl.dispose();
+    }
+    for (var ctrl in _courseControllers.values) {
+      ctrl.dispose();
+    }
+    for (var ctrl in _baseControllers.values) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -192,6 +216,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
           6 => _buildCourseManagement(),
           7 => _buildRegistrationTracking(),
           8 => _buildAdvisorChangeApproval(),
+          9 => _buildEvaluationFormManager(),
+          10 => _buildTuitionManager(),
           _ => const Center(child: Text('Chức năng đang phát triển', style: TextStyle(color: Colors.white))),
         },
       ),
@@ -1745,5 +1771,1171 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       }
     }
+  }
+
+  // --- 9: Form Đánh giá GV ---
+  Widget _buildEvaluationFormManager() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(children: [
+                Icon(Icons.poll, color: AppColors.adminColor, size: 28),
+                SizedBox(width: 12),
+                Text('QUẢN LÝ FORM ĐÁNH GIÁ GIẢNG VIÊN', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
+              ]),
+              ElevatedButton.icon(
+                onPressed: () => _showCreateEvalFormDialog(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Tạo Form mới'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.adminColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text('Tạo và quản lý các bộ câu hỏi đánh giá giảng viên. Sinh viên sẽ trả lời dưới dạng trắc nghiệm.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('evaluation_forms').orderBy('createdAt', descending: true).snapshots(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
+              }
+              final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.inbox, size: 48, color: Colors.white.withValues(alpha: 0.3)),
+                  const SizedBox(height: 16),
+                  Text('Chưa có form đánh giá nào. Nhấn "Tạo Form mới" để bắt đầu.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+                ]));
+              }
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final doc = docs[index];
+                  final data = doc.data() as Map<String, dynamic>;
+                  final title = data['title'] ?? 'Không có tiêu đề';
+                  final year = data['academicYear'] ?? '';
+                  final sem = data['semester'] ?? '';
+                  final questions = (data['questions'] as List<dynamic>?) ?? [];
+                  final isActive = data['isActive'] ?? false;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: isActive ? AppColors.adminColor.withValues(alpha: 0.4) : Colors.white.withValues(alpha: 0.1)),
+                    ),
+                    child: Theme(
+                      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                      child: ExpansionTile(
+                        leading: CircleAvatar(
+                          backgroundColor: isActive ? AppColors.adminColor.withValues(alpha: 0.2) : Colors.grey.withValues(alpha: 0.2),
+                          child: Icon(Icons.poll, color: isActive ? AppColors.adminColor : Colors.grey),
+                        ),
+                        title: Row(children: [
+                          Expanded(child: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15))),
+                          if (isActive)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
+                              child: const Text('Đang kích hoạt', style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ),
+                        ]),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('$year | $sem | ${questions.length} câu hỏi', style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                        ),
+                        children: [
+                          Container(
+                            color: Colors.black12,
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                ...questions.asMap().entries.map((entry) {
+                                  final q = entry.value as Map<String, dynamic>;
+                                  final qText = q['text'] ?? '';
+                                  final options = (q['options'] as List<dynamic>?) ?? [];
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                      Text('Câu ${entry.key + 1}: $qText', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                                      const SizedBox(height: 4),
+                                      ...options.map((opt) => Padding(
+                                        padding: const EdgeInsets.only(left: 16, top: 2),
+                                        child: Row(children: [
+                                          Icon(Icons.radio_button_unchecked, color: Colors.white38, size: 14),
+                                          const SizedBox(width: 6),
+                                          Text(opt.toString(), style: const TextStyle(color: Colors.white60, fontSize: 12)),
+                                        ]),
+                                      )),
+                                    ]),
+                                  );
+                                }),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    if (!isActive)
+                                      ElevatedButton.icon(
+                                        onPressed: () async {
+                                          // Deactivate all other forms first
+                                          final allForms = await FirebaseFirestore.instance.collection('evaluation_forms').get();
+                                          for (var f in allForms.docs) {
+                                            await f.reference.update({'isActive': false});
+                                          }
+                                          await doc.reference.update({'isActive': true});
+                                          if (mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('Đã kích hoạt form đánh giá!'), backgroundColor: Colors.green),
+                                            );
+                                          }
+                                        },
+                                        icon: const Icon(Icons.check_circle, size: 16),
+                                        label: const Text('Kích hoạt'),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                                      ),
+                                    if (isActive)
+                                      ElevatedButton.icon(
+                                        onPressed: () async {
+                                          await doc.reference.update({'isActive': false});
+                                        },
+                                        icon: const Icon(Icons.pause_circle, size: 16),
+                                        label: const Text('Tắt'),
+                                        style: ElevatedButton.styleFrom(backgroundColor: Colors.orange, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                                      ),
+                                    const SizedBox(width: 8),
+                                    ElevatedButton.icon(
+                                      onPressed: () async {
+                                        final confirm = await showDialog<bool>(
+                                          context: context,
+                                          builder: (ctx) => AlertDialog(
+                                            backgroundColor: const Color(0xFF1a2a1f),
+                                            title: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
+                                            content: const Text('Xóa form đánh giá này?', style: TextStyle(color: Colors.white70)),
+                                            actions: [
+                                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.white54))),
+                                              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('Xóa', style: TextStyle(color: Colors.white))),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirm == true) {
+                                          await doc.reference.delete();
+                                        }
+                                      },
+                                      icon: const Icon(Icons.delete, size: 16),
+                                      label: const Text('Xóa'),
+                                      style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8)),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showCreateEvalFormDialog() {
+    final titleCtrl = TextEditingController();
+    String year = '2026-2027';
+    String semester = 'Học kỳ 1';
+    final List<Map<String, dynamic>> questions = [];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          return Dialog(
+            backgroundColor: const Color(0xFF1a2a1f),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            child: Container(
+              width: 650,
+              constraints: const BoxConstraints(maxHeight: 700),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.adminColor.withValues(alpha: 0.15),
+                      borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), topRight: Radius.circular(16)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.poll, color: AppColors.adminColor, size: 24),
+                      const SizedBox(width: 12),
+                      const Text('TẠO FORM ĐÁNH GIÁ GIẢNG VIÊN', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(ctx)),
+                    ]),
+                  ),
+                  // Body
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Title
+                          const Text('Tiêu đề form *', style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 6),
+                          TextField(
+                            controller: titleCtrl,
+                            style: const TextStyle(color: Colors.white),
+                            decoration: InputDecoration(
+                              hintText: 'VD: Khảo sát chất lượng giảng dạy HK1 2025-2026',
+                              hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                              filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Year & Semester
+                          Row(children: [
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Text('Năm học', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                              const SizedBox(height: 6),
+                              DropdownButtonFormField<String>(
+                                value: year,
+                                dropdownColor: const Color(0xFF1a2a1f),
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(filled: true, fillColor: Colors.white.withValues(alpha: 0.08), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+                                items: ['2024-2025', '2025-2026', '2026-2027', '2027-2028'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                                onChanged: (v) => setDialogState(() => year = v!),
+                              ),
+                            ])),
+                            const SizedBox(width: 12),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Text('Học kỳ', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                              const SizedBox(height: 6),
+                              DropdownButtonFormField<String>(
+                                value: semester,
+                                dropdownColor: const Color(0xFF1a2a1f),
+                                style: const TextStyle(color: Colors.white),
+                                decoration: InputDecoration(filled: true, fillColor: Colors.white.withValues(alpha: 0.08), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
+                                items: ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                                onChanged: (v) => setDialogState(() => semester = v!),
+                              ),
+                            ])),
+                          ]),
+                          const SizedBox(height: 20),
+                          // Questions
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Danh sách câu hỏi (${questions.length})', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                              TextButton.icon(
+                                onPressed: () {
+                                  setDialogState(() {
+                                    questions.add({
+                                      'text': '',
+                                      'options': ['Hoàn toàn đồng ý', 'Đồng ý', 'Bình thường', 'Không đồng ý', 'Hoàn toàn không đồng ý'],
+                                    });
+                                  });
+                                },
+                                icon: const Icon(Icons.add_circle, color: AppColors.adminColor, size: 18),
+                                label: const Text('Thêm câu hỏi', style: TextStyle(color: AppColors.adminColor)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (questions.isEmpty)
+                            Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withValues(alpha: 0.1))),
+                              child: const Center(child: Text('Chưa có câu hỏi nào. Nhấn "Thêm câu hỏi" ở trên.', style: TextStyle(color: Colors.white38))),
+                            ),
+                          ...questions.asMap().entries.map((entry) {
+                            final idx = entry.key;
+                            final q = entry.value;
+                            final textCtrl = TextEditingController(text: q['text'] ?? '');
+                            final opts = List<String>.from(q['options'] ?? []);
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.05),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    CircleAvatar(radius: 12, backgroundColor: AppColors.adminColor.withValues(alpha: 0.3), child: Text('${idx + 1}', style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                                    const SizedBox(width: 8),
+                                    const Text('Nội dung câu hỏi:', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                    const Spacer(),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent, size: 18),
+                                      onPressed: () => setDialogState(() => questions.removeAt(idx)),
+                                      padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                                    ),
+                                  ]),
+                                  const SizedBox(height: 6),
+                                  TextField(
+                                    controller: textCtrl,
+                                    onChanged: (val) => questions[idx]['text'] = val,
+                                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                                    decoration: InputDecoration(
+                                      hintText: 'VD: Giảng viên truyền đạt kiến thức rõ ràng, dễ hiểu',
+                                      hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.25), fontSize: 12),
+                                      filled: true, fillColor: Colors.white.withValues(alpha: 0.05),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: BorderSide.none),
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  const Text('Các lựa chọn (mỗi dòng 1 đáp án):', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                  const SizedBox(height: 4),
+                                  ...opts.asMap().entries.map((oEntry) {
+                                    final oIdx = oEntry.key;
+                                    final oCtrl = TextEditingController(text: oEntry.value);
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 4),
+                                      child: Row(children: [
+                                        const Icon(Icons.radio_button_unchecked, color: Colors.white30, size: 14),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: TextField(
+                                            controller: oCtrl,
+                                            onChanged: (val) {
+                                              (questions[idx]['options'] as List)[oIdx] = val;
+                                            },
+                                            style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              filled: true, fillColor: Colors.white.withValues(alpha: 0.03),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide.none),
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                            ),
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 16),
+                                          onPressed: () => setDialogState(() => (questions[idx]['options'] as List).removeAt(oIdx)),
+                                          padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                                        ),
+                                      ]),
+                                    );
+                                  }),
+                                  TextButton.icon(
+                                    onPressed: () => setDialogState(() => (questions[idx]['options'] as List).add('Đáp án mới')),
+                                    icon: const Icon(Icons.add, size: 14, color: Colors.white54),
+                                    label: const Text('Thêm đáp án', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                                    style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(0, 24)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // Footer
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy', style: TextStyle(color: Colors.white54))),
+                        const SizedBox(width: 12),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            if (titleCtrl.text.trim().isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tiêu đề'), backgroundColor: Colors.red));
+                              return;
+                            }
+                            if (questions.isEmpty || questions.any((q) => (q['text'] ?? '').toString().trim().isEmpty)) {
+                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập nội dung cho tất cả câu hỏi'), backgroundColor: Colors.red));
+                              return;
+                            }
+
+                            await FirebaseFirestore.instance.collection('evaluation_forms').add({
+                              'title': titleCtrl.text.trim(),
+                              'academicYear': year,
+                              'semester': semester,
+                              'questions': questions.map((q) => {
+                                'text': q['text'],
+                                'options': List<String>.from(q['options'] ?? []),
+                              }).toList(),
+                              'isActive': false,
+                              'createdAt': FieldValue.serverTimestamp(),
+                              'createdBy': widget.email,
+                            });
+
+                            if (mounted) {
+                              Navigator.pop(ctx);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Đã tạo form đánh giá thành công!'), backgroundColor: Colors.green),
+                              );
+                            }
+                          },
+                          icon: const Icon(Icons.save, size: 18),
+                          label: const Text('Lưu Form'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.adminColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // ====== TUITION MANAGEMENT METHODS ======
+  Future<void> _loadRates() async {
+    if (_ratesLoaded) return;
+    final snapshot = await FirebaseFirestore.instance.collection('tuition_rates').get();
+    final majors = ['Kỹ thuật phần mềm', 'Hệ thống thông tin', 'Khoa học máy tính', 'An toàn thông tin', 'Mặc định'];
+    
+    final defaultRates = {
+      'Kỹ thuật phần mềm': {'credit': 480000, 'course': 150000, 'base': 1200000},
+      'Hệ thống thông tin': {'credit': 450000, 'course': 150000, 'base': 1200000},
+      'Khoa học máy tính': {'credit': 460000, 'course': 150000, 'base': 1200000},
+      'An toàn thông tin': {'credit': 470000, 'course': 150000, 'base': 1200000},
+      'Mặc định': {'credit': 450000, 'course': 150000, 'base': 1000000},
+    };
+
+    for (var major in majors) {
+      int cVal = defaultRates[major]?['credit'] ?? 450000;
+      int coVal = defaultRates[major]?['course'] ?? 150000;
+      int bVal = defaultRates[major]?['base'] ?? 1000000;
+
+      final match = snapshot.docs.where((d) => d.id == major).toList();
+      if (match.isNotEmpty) {
+        final data = match.first.data();
+        cVal = data['creditRate'] ?? cVal;
+        coVal = data['courseRate'] ?? coVal;
+        bVal = data['baseFee'] ?? bVal;
+      }
+
+      _creditControllers[major] = TextEditingController(text: cVal.toString());
+      _courseControllers[major] = TextEditingController(text: coVal.toString());
+      _baseControllers[major] = TextEditingController(text: bVal.toString());
+    }
+
+    if (mounted) {
+      setState(() {
+        _ratesLoaded = true;
+      });
+    }
+  }
+
+  Future<void> _saveRates() async {
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+    
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      for (var major in _creditControllers.keys) {
+        final cRef = FirebaseFirestore.instance.collection('tuition_rates').doc(major);
+        batch.set(cRef, {
+          'major': major,
+          'creditRate': int.tryParse(_creditControllers[major]!.text.trim()) ?? 0,
+          'courseRate': int.tryParse(_courseControllers[major]!.text.trim()) ?? 0,
+          'baseFee': int.tryParse(_baseControllers[major]!.text.trim()) ?? 0,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
+      
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lưu đơn giá học phí thành công!'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi lưu đơn giá: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _calculateAllStudentsTuition() async {
+    setState(() => _calculating = true);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final ratesSnapshot = await FirebaseFirestore.instance.collection('tuition_rates').get();
+      final rates = <String, Map<String, int>>{};
+      for (var doc in ratesSnapshot.docs) {
+        final data = doc.data();
+        rates[doc.id] = {
+          'creditRate': data['creditRate'] ?? 450000,
+          'courseRate': data['courseRate'] ?? 150000,
+          'baseFee': data['baseFee'] ?? 1000000,
+        };
+      }
+
+      Map<String, int> getRatesForMajor(String? major) {
+        final m = major ?? 'Mặc định';
+        if (rates.containsKey(m)) return rates[m]!;
+        if (rates.containsKey('Mặc định')) return rates['Mặc định']!;
+        return {'creditRate': 450000, 'courseRate': 150000, 'baseFee': 1000000};
+      }
+
+      final usersSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .where('role', isEqualTo: 'student')
+          .get();
+
+      final regsSnapshot = await FirebaseFirestore.instance
+          .collection('registrations')
+          .where('academicYear', isEqualTo: _calcYear)
+          .where('semester', isEqualTo: _calcSemester)
+          .get();
+
+      final regsByUser = <String, List<QueryDocumentSnapshot>>{};
+      for (var doc in regsSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final uid = data['userId'] ?? '';
+        if (uid.isNotEmpty) {
+          if (!regsByUser.containsKey(uid)) regsByUser[uid] = [];
+          regsByUser[uid]!.add(doc);
+        }
+      }
+
+      final existingSnapshot = await FirebaseFirestore.instance
+          .collection('tuition_fees')
+          .where('academicYear', isEqualTo: _calcYear)
+          .where('semester', isEqualTo: _calcSemester)
+          .get();
+      
+      final existingStatus = <String, String>{};
+      for (var doc in existingSnapshot.docs) {
+        existingStatus[doc.id] = doc.data()['status'] ?? 'unpaid';
+      }
+
+      final batch = FirebaseFirestore.instance.batch();
+      int successCount = 0;
+
+      for (var userDoc in usersSnapshot.docs) {
+        final userData = userDoc.data();
+        final uid = userDoc.id;
+        final studentName = userData['fullName'] ?? 'N/A';
+        final studentEmail = userData['email'] ?? 'N/A';
+        final studentCardId = userData['studentId'] ?? 'N/A';
+        final studentMajor = userData['major'] ?? 'Mặc định';
+
+        final userRegs = regsByUser[uid] ?? [];
+        if (userRegs.isEmpty) {
+          continue;
+        }
+
+        int totalCredits = 0;
+        final coursesList = <Map<String, dynamic>>[];
+        final studentRates = getRatesForMajor(studentMajor);
+        final cRate = studentRates['creditRate']!;
+        final coRate = studentRates['courseRate']!;
+        final bFee = studentRates['baseFee']!;
+
+        for (var regDoc in userRegs) {
+          final regData = regDoc.data() as Map<String, dynamic>;
+          final cCredits = (regData['credits'] as num?)?.toInt() ?? 3;
+          final courseName = regData['courseName'] ?? 'N/A';
+          final courseId = regData['courseId'] ?? 'N/A';
+          totalCredits += cCredits;
+
+          final courseTuition = (cCredits * cRate) + coRate;
+          coursesList.add({
+            'courseId': courseId,
+            'courseName': courseName,
+            'credits': cCredits,
+            'tuition': courseTuition,
+          });
+        }
+
+        final int totalTuition = (totalCredits * cRate) + (userRegs.length * coRate) + bFee;
+        final invoiceDocId = '${uid}_${_calcYear}_${_calcSemester}'.replaceAll(' ', '_');
+        final currentStatus = existingStatus[invoiceDocId] ?? 'unpaid';
+        final invoiceRef = FirebaseFirestore.instance.collection('tuition_fees').doc(invoiceDocId);
+        
+        batch.set(invoiceRef, {
+          'studentId': uid,
+          'studentName': studentName,
+          'studentEmail': studentEmail,
+          'studentCardId': studentCardId,
+          'major': studentMajor,
+          'academicYear': _calcYear,
+          'semester': _calcSemester,
+          'creditsCount': totalCredits,
+          'coursesCount': userRegs.length,
+          'baseFee': bFee,
+          'courses': coursesList,
+          'totalAmount': totalTuition,
+          'status': currentStatus,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        successCount++;
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã tính học phí cho $successCount sinh viên thành công!'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi khi tính học phí: $e'), backgroundColor: Colors.red),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _calculating = false);
+      }
+    }
+  }
+
+  Widget _buildTuitionManager() {
+    _loadRates();
+    
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.payment, color: AppColors.adminColor, size: 28),
+                  SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('QUẢN LÝ HỌC PHÍ', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text('Thiết lập định mức học phí & tính hóa đơn sinh viên', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
+              
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                padding: const EdgeInsets.all(4),
+                child: Row(
+                  children: [
+                    _tabButton(0, 'Định mức & Đơn giá', Icons.settings),
+                    _tabButton(1, 'Hóa đơn học phí', Icons.receipt_long),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        Expanded(
+          child: !_ratesLoaded
+              ? const Center(child: CircularProgressIndicator(color: AppColors.adminColor))
+              : _tuitionTab == 0
+                  ? _buildRatesTab()
+                  : _buildBillingTab(),
+        ),
+      ],
+    );
+  }
+
+  Widget _tabButton(int index, String label, IconData icon) {
+    final sel = _tuitionTab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _tuitionTab = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? AppColors.adminColor.withValues(alpha: 0.25) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: sel ? AppColors.adminColor.withValues(alpha: 0.5) : Colors.transparent),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: sel ? AppColors.adminColor : Colors.white60, size: 16),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: sel ? Colors.white : Colors.white60, fontSize: 12, fontWeight: sel ? FontWeight.bold : FontWeight.normal)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRatesTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Column(
+        children: [
+          _buildRateCard('Kỹ thuật phần mềm', Icons.computer, Colors.blue),
+          const SizedBox(height: 16),
+          _buildRateCard('Hệ thống thông tin', Icons.dns, Colors.green),
+          const SizedBox(height: 16),
+          _buildRateCard('Khoa học máy tính', Icons.code, Colors.purple),
+          const SizedBox(height: 16),
+          _buildRateCard('An toàn thông tin', Icons.security, Colors.orange),
+          const SizedBox(height: 16),
+          _buildRateCard('Mặc định', Icons.tune, Colors.grey),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _saveRates,
+            icon: const Icon(Icons.save),
+            label: const Text('Lưu Tất Cả Cấu Hình', style: TextStyle(fontWeight: FontWeight.bold)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.adminColor,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 4,
+            ),
+          ),
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRateCard(String major, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Text(major, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _rateTextField(
+                  label: 'Đơn giá tín chỉ',
+                  controller: _creditControllers[major]!,
+                  hint: 'VD: 480000',
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _rateTextField(
+                  label: 'Đơn giá môn học',
+                  controller: _courseControllers[major]!,
+                  hint: 'VD: 150000',
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _rateTextField(
+                  label: 'Học phí cơ bản kỳ',
+                  controller: _baseControllers[major]!,
+                  hint: 'VD: 1200000',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _rateTextField({required String label, required TextEditingController controller, required String hint}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.2), fontSize: 13),
+            filled: true,
+            fillColor: Colors.white.withValues(alpha: 0.05),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            suffixText: 'đ',
+            suffixStyle: const TextStyle(color: Colors.white30, fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBillingTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.02),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _filterDropdown('Năm học', _calcYear, ['2024-2025', '2025-2026', '2026-2027'], (v) {
+                        setState(() { _calcYear = v!; });
+                      }),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _filterDropdown('Học kỳ', _calcSemester, ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'], (v) {
+                        setState(() { _calcSemester = v!; });
+                      }),
+                    ),
+                    const SizedBox(width: 16),
+                    ElevatedButton.icon(
+                      onPressed: _calculating ? null : _calculateAllStudentsTuition,
+                      icon: _calculating
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.calculate, size: 18),
+                      label: const Text('Tính học phí tự động', style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.adminColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _tuitionSearchCtrl,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  onChanged: (val) {
+                    setState(() {
+                      _tuitionSearchQuery = val.trim().toLowerCase();
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Tìm theo tên sinh viên hoặc mã sinh viên...',
+                    hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3), fontSize: 13),
+                    filled: true,
+                    fillColor: Colors.white.withValues(alpha: 0.05),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white38, size: 18),
+                    suffixIcon: _tuitionSearchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.white38, size: 18),
+                            onPressed: () {
+                              _tuitionSearchCtrl.clear();
+                              setState(() {
+                                _tuitionSearchQuery = '';
+                              });
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('tuition_fees')
+                .where('academicYear', isEqualTo: _calcYear)
+                .where('semester', isEqualTo: _calcSemester)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
+              }
+              
+              var docs = snapshot.data?.docs ?? [];
+              
+              if (_tuitionSearchQuery.isNotEmpty) {
+                docs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final name = (data['studentName'] ?? '').toString().toLowerCase();
+                  final cardId = (data['studentCardId'] ?? '').toString().toLowerCase();
+                  return name.contains(_tuitionSearchQuery) || cardId.contains(_tuitionSearchQuery);
+                }).toList();
+              }
+              
+              if (docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.receipt_long, size: 48, color: Colors.white.withValues(alpha: 0.2)),
+                      const SizedBox(height: 12),
+                      const Text('Chưa có hóa đơn học phí nào được tạo cho kỳ này', style: TextStyle(color: Colors.white38, fontSize: 13)),
+                      const SizedBox(height: 8),
+                      const Text('Hãy nhấn "Tính học phí tự động" ở trên', style: TextStyle(color: Colors.white24, fontSize: 11)),
+                    ],
+                  ),
+                );
+              }
+              
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  return _buildBillingItem(docs[index]);
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBillingItem(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final name = data['studentName'] ?? 'N/A';
+    final cardId = data['studentCardId'] ?? 'N/A';
+    final major = data['major'] ?? 'Mặc định';
+    final credits = data['creditsCount'] ?? 0;
+    final courses = data['coursesCount'] ?? 0;
+    final total = data['totalAmount'] ?? 0;
+    final status = data['status'] ?? 'unpaid';
+    final coursesList = (data['courses'] as List<dynamic>?) ?? [];
+    final isPaid = status == 'paid';
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          iconColor: Colors.white70,
+          collapsedIconColor: Colors.white30,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isPaid ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isPaid ? Icons.check_circle_outline : Icons.pending_outlined,
+              color: isPaid ? Colors.green : Colors.red,
+              size: 20,
+            ),
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text(cardId, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.adminColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(major, style: const TextStyle(color: AppColors.adminColor, fontSize: 9, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text('${_formatCurrency(total)} đ', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text('$credits TC | $courses môn', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                ],
+              ),
+            ],
+          ),
+          children: [
+            Container(
+              color: Colors.black12,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('CHI TIẾT MÔN ĐĂNG KÝ:', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold, fontSize: 11)),
+                  const SizedBox(height: 8),
+                  ...coursesList.map((c) {
+                    final cData = c as Map<String, dynamic>;
+                    final cId = cData['courseId'] ?? 'N/A';
+                    final cName = cData['courseName'] ?? 'N/A';
+                    final cCredits = cData['credits'] ?? 3;
+                    final cTuition = cData['tuition'] ?? 0;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '$cId - $cName ($cCredits TC)',
+                              style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text('${_formatCurrency(cTuition)} đ', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    );
+                  }),
+                  const Divider(color: Colors.white12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Phụ phí kỳ học (Base Fee):', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      Text('${_formatCurrency(data['baseFee'] ?? 0)} đ', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          await doc.reference.update({
+                            'status': isPaid ? 'unpaid' : 'paid',
+                            'paymentMethod': isPaid ? null : 'admin_manual',
+                            'paymentDate': isPaid ? null : FieldValue.serverTimestamp(),
+                          });
+                        },
+                        icon: Icon(isPaid ? Icons.undo : Icons.check, size: 14),
+                        label: Text(isPaid ? 'Đánh dấu Chưa nộp' : 'Đánh dấu Đã nộp', style: const TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isPaid ? Colors.orange.withValues(alpha: 0.8) : Colors.green.withValues(alpha: 0.8),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          elevation: 0,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          final confirm = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              backgroundColor: const Color(0xFF1a2a1f),
+                              title: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
+                              content: Text('Xóa hóa đơn học phí của $name?', style: const TextStyle(color: Colors.white70)),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.white54))),
+                                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('Xóa', style: TextStyle(color: Colors.white))),
+                              ],
+                            ),
+                          );
+                          if (confirm == true) {
+                            await doc.reference.delete();
+                          }
+                        },
+                        icon: const Icon(Icons.delete_outline, size: 14),
+                        label: const Text('Xóa', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.withValues(alpha: 0.8),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatCurrency(int amount) {
+    return amount.toString().replaceAllMapped(
+      RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
+      (Match m) => '${m[1]},',
+    );
   }
 }
