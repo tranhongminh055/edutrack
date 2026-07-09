@@ -36,8 +36,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         if (doc.exists && doc.data() != null) {
           final userData = doc.data()!;
           final String roleStr = (userData['role'] ?? 'student').toString();
-          final UserRole role =
-              (roleStr == 'lecturer') ? UserRole.lecturer : UserRole.student;
+          UserRole role = UserRole.student;
+          if (roleStr == 'lecturer') {
+            role = UserRole.lecturer;
+          } else if (roleStr == 'admin') {
+            role = UserRole.admin;
+          }
 
           if (mounted) {
             setState(() {
