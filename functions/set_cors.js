@@ -1,0 +1,1 @@
+const admin = require('firebase-admin'); admin.initializeApp({credential: admin.credential.applicationDefault()}); const bucket = admin.storage().bucket('edu---track.firebasestorage.app'); const corsConfig = require('../cors.json'); bucket.setCorsConfiguration(corsConfig).then(() => console.log('CORS set')).catch(e => console.error(e));

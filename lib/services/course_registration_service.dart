@@ -217,18 +217,20 @@ class CourseRegistrationService {
 
   // ====== QUẢN LÝ ĐIỂM SỐ (GRADING SYSTEM) ======
 
-  /// Giảng viên lưu nháp hoặc cập nhật điểm thành phần (chuyên cần, giữa kỳ, cuối kỳ)
+  /// Giảng viên lưu nháp hoặc cập nhật điểm thành phần (chuyên cần, giữa kỳ, cuối kỳ và điểm chi tiết)
   Future<void> updateStudentGrade({
     required String regDocId,
     double? attendanceScore,
     double? midtermScore,
     double? finalScore,
+    List<Map<String, dynamic>>? detailedGrades,
     String? status,
   }) async {
     final Map<String, dynamic> updateData = {};
     if (attendanceScore != null) updateData['attendanceScore'] = attendanceScore;
     if (midtermScore != null) updateData['midtermScore'] = midtermScore;
     if (finalScore != null) updateData['finalScore'] = finalScore;
+    if (detailedGrades != null) updateData['detailedGrades'] = detailedGrades;
     if (status != null) updateData['gradeStatus'] = status;
 
     if (updateData.isNotEmpty) {

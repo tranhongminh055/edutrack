@@ -13,7 +13,9 @@ import * as admin from "firebase-admin";
 import * as logger from "firebase-functions/logger";
 
 // Initialize the Firebase Admin SDK
-admin.initializeApp();
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
 
 // Trigger when a new user document is created in the 'users' collection
 export const onUserRegistered = onDocumentCreated("users/{userId}", async (event) => {
@@ -159,5 +161,42 @@ export const onNotificationUpdated = onDocumentWritten("notifications/{notificat
     } catch (error) {
       logger.error(`Error updating notification ${notificationId}:`, error);
     }
+  }
+});
+
+import { onRequest } from 'firebase-functions/v2/https';
+export const setCors = onRequest({cors: true}, async (req, res) => {
+  try {
+    if (req.method === 'POST') {
+      const { base64Data, mimeType, fileName } = req.body;
+      if (!base64Data || !fileName) {
+        res.status(400).send('Missing data');
+        return;
+      }
+      const bucket = admin.storage().bucket('edu---track.firebasestorage.app');
+      const file = bucket.file('tuition_proofs/' + fileName);
+      const buffer = Buffer.from(base64Data, 'base64');
+      await file.save(buffer, {
+        metadata: {
+          contentType: mimeType || 'image/jpeg'
+        }
+      });
+      
+      const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/edu---track.firebasestorage.app/o/tuition_proofs%2F${encodeURIComponent(fileName)}?alt=media`;
+      res.status(200).json({ url: downloadUrl });
+      return;
+    }
+
+    // Default behavior for GET
+    const bucket = admin.storage().bucket('edu---track.firebasestorage.app');
+    await bucket.setCorsConfiguration([{
+      origin: ['*'],
+      method: ['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS'],
+      maxAgeSeconds: 3600,
+      responseHeader: ['*']
+    }]);
+    res.send('CORS set successfully');
+  } catch (e: any) {
+    res.status(500).send(e.toString());
   }
 });

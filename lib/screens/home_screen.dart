@@ -3,11 +3,15 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
+import 'dart:ui_web' as ui_web;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:http/http.dart' as http;
+import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
 import '../widgets/nature_background.dart';
 import '../widgets/glass_container.dart';
@@ -15,6 +19,7 @@ import '../widgets/role_selector.dart';
 import '../widgets/schedule_grid.dart';
 import '../widgets/mail_client_view.dart';
 import '../widgets/forum_board_view.dart';
+import '../widgets/live_clock.dart';
 import '../services/notification_service.dart';
 import '../services/course_registration_service.dart';
 import 'lecturer_dashboard.dart';
@@ -45,8 +50,6 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isStudyMenuExpanded = false;
   int? _selectedStudySubIndex;
   int? _selectedFreshmanFeatureIndex;
-  Timer? _timer;
-  DateTime _currentTime = DateTime.now();
   final NotificationService _notificationService = NotificationService();
   final CourseRegistrationService _regService = CourseRegistrationService();
   
@@ -97,11 +100,20 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _tuitionCourses = [];
   bool _isLoadingTuition = false;
   int _totalTuition = 0;
+  int _baseFee = 0;
   int _studentTuitionTab = 0; // 0: Hóa đơn học phí, 1: Lịch sử nộp học phí
   bool _isSimulatingPayment = false;
   String _tuitionStatus = 'unpaid';
   String? _paymentMethod;
   DateTime? _paymentDate;
+  String? _currentInvoiceDocId;
+
+  // Detailed Grades states
+  String _selectedGradesYear = '2025-2026';
+  String _selectedGradesSemester = 'Học kỳ Hè';
+  bool _isShowingGradesList = false;
+  Map<String, dynamic>? _selectedCourseForGrades;
+  String _gradeViewMode = 'personal'; // 'personal' or 'assignments'
 
   String? _avatarBase64;
   final ImagePicker _picker = ImagePicker();
@@ -117,11 +129,11 @@ class _HomeScreenState extends State<HomeScreen> {
     'Cố vấn Học tập',
     'Đánh giá & Khảo sát',
     'Học phí',
-    'Thư viện',
-    'Phần mềm',
-    'Sổ tay Sinh viên',
-    'Đăng ký Cấp Giấy xác nhận',
+    'Xem điểm Cụ thể',
   ];
+
+  Stream<QuerySnapshot>? _tuitionHistoryStream;
+  Stream<QuerySnapshot>? _digitalInvoicesStream;
 
   @override
   void initState() {
@@ -130,13 +142,20 @@ class _HomeScreenState extends State<HomeScreen> {
     _fullNameController.text = widget.fullName;
     _idController.text = widget.studentId;
 
-    _loadSavedProfile();
+    _tuitionHistoryStream = FirebaseFirestore.instance.collection('tuition_fees')
+        .where('studentId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+        .orderBy('academicYear', descending: true)
+        .orderBy('semester', descending: true)
+        .snapshots();
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _currentTime = DateTime.now();
-      });
-    });
+    _digitalInvoicesStream = FirebaseFirestore.instance.collection('tuition_fees')
+        .where('studentId', isEqualTo: FirebaseAuth.instance.currentUser?.uid)
+        .where('status', isEqualTo: 'paid')
+        .orderBy('academicYear', descending: true)
+        .orderBy('semester', descending: true)
+        .snapshots();
+
+    _loadSavedProfile();
   }
 
   Future<void> _loadSavedProfile() async {
@@ -240,7 +259,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel();
     _notiTitleController.dispose();
     _notiContentController.dispose();
     _fullNameController.dispose();
@@ -257,18 +275,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  String _getWeekdayName(int weekday) {
-    switch (weekday) {
-      case 1: return 'Thứ hai';
-      case 2: return 'Thứ ba';
-      case 3: return 'Thứ tư';
-      case 4: return 'Thứ năm';
-      case 5: return 'Thứ sáu';
-      case 6: return 'Thứ bảy';
-      case 7: return 'Chủ nhật';
-      default: return '';
-    }
-  }
+
 
   Widget build(BuildContext context) {
     if (widget.role == UserRole.student) {
@@ -323,10 +330,7 @@ class _HomeScreenState extends State<HomeScreen> {
             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
             web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}', '_blank');
           }),
-          _buildTopNavLink(Icons.forum, 'Forum', onTap: () {
-            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}&view=forum', '_blank');
-          }),
+          _buildTopNavLink(Icons.forum, 'Forum', onTap: () => setState(() => _selectedMenuIndex = 997)),
           _buildTopNavLink(Icons.library_books, 'e-Lib', onTap: () => setState(() => _selectedMenuIndex = 8)),
           const Spacer(),
           const Text('Việt Nam  |  English', style: TextStyle(color: Colors.white70, fontSize: 13)),
@@ -355,11 +359,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBanner() {
-    final hourStr = _currentTime.hour.toString().padLeft(2, '0');
-    final minuteStr = _currentTime.minute.toString().padLeft(2, '0');
-    final secondStr = _currentTime.second.toString().padLeft(2, '0');
-    final dateStr = '${_getWeekdayName(_currentTime.weekday)}, ngày ${_currentTime.day} tháng ${_currentTime.month} năm ${_currentTime.year}';
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: GlassContainer(
@@ -377,29 +376,20 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             
             // Center: Clock
-            Column(
-              children: [
-                Row(
-                  children: [
-                    _buildTimeBox(hourStr[0]), _buildTimeBox(hourStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
-                    _buildTimeBox(minuteStr[0]), _buildTimeBox(minuteStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
-                    _buildTimeBox(secondStr[0]), _buildTimeBox(secondStr[1]),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(dateStr, style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 14)),
-              ],
-            ),
+            const LiveClock(),
             
             // Right: Quick Links
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildQuickLink(Icons.mail, 'EduTrack Gmail'),
+                _buildQuickLink(Icons.mail, 'EduTrack Gmail', onTap: () => setState(() => _selectedMenuIndex = 998)),
                 const SizedBox(height: 8),
-                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN'),
+                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN', onTap: () {
+                  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                  web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=student&email=${Uri.encodeComponent(widget.email)}', '_blank');
+                }),
                 const SizedBox(height: 8),
-                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK'),
+                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK', onTap: () => setState(() => _selectedMenuIndex = 997)),
               ],
             ),
           ],
@@ -408,25 +398,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTimeBox(String digit) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(digit, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-    );
-  }
 
-  Widget _buildQuickLink(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, color: AppColors.studentColor, size: 16),
-        const SizedBox(width: 8),
-        Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-      ],
+
+  Widget _buildQuickLink(IconData icon, String text, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.studentColor, size: 16),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 
@@ -550,6 +533,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           _selectedLecturerForEval = null;
                         }
                       });
+                      if (index == 7) {
+                        _loadTuitionData();
+                      }
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -650,10 +636,8 @@ class _HomeScreenState extends State<HomeScreen> {
       case 5: return _buildAdvisorContent();
       case 6: return _buildSurveyContent();
       case 7: return _buildTuitionContent();
-      case 8: return _buildLibraryContent();
-      case 9: return _buildSoftwareContent();
-      case 10: return _buildHandbookContent();
-      case 11: return _buildCertificateContent();
+      case 8: return _buildDetailedGradesContent();
+      case 997: return ForumBoardView(role: UserRole.student, email: widget.email);
       case 998: return MailClientView(role: UserRole.student, email: widget.email);
       case 999: return ELearningDashboard(role: UserRole.student, userId: FirebaseAuth.instance.currentUser?.uid ?? '', email: widget.email, currentSemester: _studentRegSemester, currentYear: _studentRegYear);
       default: return _buildRulesContent();
@@ -861,7 +845,7 @@ class _HomeScreenState extends State<HomeScreen> {
         else if (label == 'Khoa')
           _buildDropdownField(label, controller!, ['Khoa CNTT', 'Khoa Kinh tế', 'Khoa Ngoại ngữ', 'Khoa Y Dược', 'Khoa Xây dựng', 'Khoa Du lịch'])
         else if (label == 'Ngành')
-          _buildDropdownField(label, controller!, ['Kỹ thuật Phần mềm', 'Khoa học Máy tính', 'An toàn Thông tin', 'Quản trị Kinh doanh', 'Ngôn ngữ Anh', 'Marketing'])
+          _buildDropdownField(label, controller!, ['Kỹ thuật phần mềm', 'Khoa học máy tính', 'Hệ thống thông tin', 'An toàn thông tin', 'Quản trị kinh doanh', 'Ngôn ngữ Anh', 'Marketing'])
         else if (label == 'Lớp')
           _buildDropdownField(label, controller!, ['KTPM1', 'KTPM2', 'KHMT1', 'NNA1', 'QTDN1'])
         else if (label == 'Khóa')
@@ -1711,30 +1695,34 @@ class _HomeScreenState extends State<HomeScreen> {
                       ));
                     }
                     
-                    
-                    Timestamp? dl;
-                    if (availableCourses.isNotEmpty) {
-                      final firstCourse = availableCourses.first.data() as Map<String, dynamic>;
-                      dl = firstCourse['registrationDeadline'] as Timestamp?;
+                    Timestamp? latestDl;
+                    for (var doc in availableCourses) {
+                      final d = doc.data() as Map<String, dynamic>;
+                      final dl = d['registrationDeadline'] as Timestamp?;
+                      if (dl != null) {
+                        if (latestDl == null || dl.toDate().isAfter(latestDl.toDate())) {
+                          latestDl = dl;
+                        }
+                      }
                     }
                     
-                    final isExpired = dl != null && dl.toDate().isBefore(DateTime.now());
+                    final isGloballyExpired = latestDl != null && latestDl.toDate().isBefore(DateTime.now());
                     
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (dl != null)
+                        if (latestDl != null)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 16),
                             child: Row(
                               children: [
-                                Icon(Icons.timer, color: isExpired ? Colors.redAccent : Colors.orange, size: 20),
+                                Icon(Icons.timer, color: isGloballyExpired ? Colors.redAccent : Colors.orange, size: 20),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Hạn đăng ký: ${dl.toDate().day}/${dl.toDate().month}/${dl.toDate().year} ${dl.toDate().hour.toString().padLeft(2, '0')}:${dl.toDate().minute.toString().padLeft(2, '0')}',
-                                  style: TextStyle(color: isExpired ? Colors.redAccent : Colors.orange, fontWeight: FontWeight.bold),
+                                  'Hạn đăng ký muộn nhất: ${latestDl.toDate().day}/${latestDl.toDate().month}/${latestDl.toDate().year} ${latestDl.toDate().hour.toString().padLeft(2, '0')}:${latestDl.toDate().minute.toString().padLeft(2, '0')}',
+                                  style: TextStyle(color: isGloballyExpired ? Colors.redAccent : Colors.orange, fontWeight: FontWeight.bold),
                                 ),
-                                if (isExpired)
+                                if (isGloballyExpired)
                                   const Padding(
                                     padding: EdgeInsets.only(left: 8.0),
                                     child: Text('(Đã hết hạn)', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
@@ -1767,6 +1755,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           rows: availableCourses.map((doc) {
                             final d = doc.data() as Map<String, dynamic>;
                             final isRegistered = _regService.isAlreadyRegistered(doc.id, myRegs);
+                            
+                            final courseDl = d['registrationDeadline'] as Timestamp?;
+                            final isExpired = courseDl != null && courseDl.toDate().isBefore(DateTime.now());
                             
                             final dayOfWeek = d['dayOfWeek'] as int? ?? 2;
                             final startHour = (d['startHour'] as num?)?.toDouble() ?? 7.0;
@@ -3379,52 +3370,421 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildScreenHeader(Icons.monetization_on, 'THÔNG TIN HỌC PHÍ'),
-        const SizedBox(height: 24),
-        
         Container(
+          width: double.infinity,
           decoration: BoxDecoration(
-            border: Border(bottom: BorderSide(color: Colors.grey.shade300, width: 1)),
+            color: Colors.white,
+            border: Border.all(color: Colors.red.shade700, width: 1.5),
+            borderRadius: BorderRadius.circular(4),
           ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _studentTabButton(0, 'Hóa đơn Học phí (Mới nhất)'),
-              const SizedBox(width: 16),
-              _studentTabButton(1, 'Lịch sử thanh toán học phí'),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Colors.red.shade600, Colors.red.shade900],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(2),
+                    topRight: Radius.circular(2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today, color: Colors.white, size: 18),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Hóa đơn Học phí',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Colors.red.shade700, width: 1.5)),
+                  color: Colors.white,
+                ),
+                child: Row(
+                  children: [
+                    _legacyTab(0, 'Hóa đơn Học phí (Mới nhất)'),
+                    Container(width: 1, height: 35, color: Colors.grey.shade400),
+                    _legacyTab(1, 'Lịch sử Xuất Hóa đơn Học phí'),
+                    Container(width: 1, height: 35, color: Colors.grey.shade400),
+                    _legacyTab(2, 'Hóa đơn số'),
+                  ],
+                ),
+              ),
+              if (_studentTuitionTab == 0)
+                _buildLegacyTuitionSelector()
+              else if (_studentTuitionTab == 1)
+                _buildTuitionHistory()
+              else
+                _buildDigitalInvoices(),
             ],
           ),
         ),
-        const SizedBox(height: 24),
-        
-        _studentTuitionTab == 0
-            ? (_showTuitionSelector ? _buildTuitionSelector() : _buildTuitionDetail())
-            : _buildPaymentHistory(),
       ],
     );
   }
 
-  Widget _studentTabButton(int index, String label) {
-    final sel = _studentTuitionTab == index;
+  Widget _legacyTab(int index, String label) {
+    final isSelected = _studentTuitionTab == index;
     return GestureDetector(
-      onTap: () => setState(() => _studentTuitionTab = index),
+      onTap: () {
+        setState(() {
+          _studentTuitionTab = index;
+        });
+      },
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: sel ? const Color(0xFFC00000) : Colors.transparent,
-              width: 3,
-            ),
-          ),
+          color: isSelected ? Colors.red.shade700 : Colors.transparent,
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: sel ? const Color(0xFFC00000) : Colors.black54,
-            fontWeight: sel ? FontWeight.bold : FontWeight.w600,
-            fontSize: 14,
+            color: isSelected ? Colors.white : Colors.black87,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 13,
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLegacyTuitionSelector() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Text('Chọn Năm học:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 13)),
+              const SizedBox(width: 16),
+              Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  color: Colors.white,
+                ),
+                child: DropdownButton<String>(
+                  value: ['2024-2025', '2025-2026', '2026-2027'].contains(_selectedTuitionYear) ? _selectedTuitionYear : 'Chọn Năm học',
+                  underline: const SizedBox(),
+                  icon: const Icon(Icons.keyboard_arrow_down, size: 16),
+                  style: const TextStyle(color: Colors.black87, fontSize: 13),
+                  items: ['Chọn Năm học', '2024-2025', '2025-2026', '2026-2027'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value == 'Chọn Năm học' ? null : value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _selectedTuitionYear = val;
+                      });
+                      _loadTuitionData();
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 32),
+              const Text('Chọn Học kỳ:', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 13)),
+              const SizedBox(width: 16),
+              Container(
+                height: 28,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade400),
+                  color: Colors.white,
+                ),
+                child: DropdownButton<String>(
+                  value: ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'].contains(_selectedTuitionSemester) ? _selectedTuitionSemester : 'Chọn Học kỳ',
+                  underline: const SizedBox(),
+                  icon: const Icon(Icons.keyboard_arrow_down, size: 16),
+                  style: const TextStyle(color: Colors.black87, fontSize: 13),
+                  items: ['Chọn Học kỳ', 'Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value == 'Chọn Học kỳ' ? null : value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _selectedTuitionSemester = val;
+                      });
+                      _loadTuitionData();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final boxWidth = constraints.constrainWidth();
+              const dashWidth = 4.0;
+              const dashHeight = 1.0;
+              final dashCount = (boxWidth / (2 * dashWidth)).floor();
+              return Flex(
+                children: List.generate(dashCount, (_) {
+                  return const SizedBox(
+                    width: dashWidth,
+                    height: dashHeight,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(color: Colors.grey),
+                    ),
+                  );
+                }),
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                direction: Axis.horizontal,
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          if (_isLoadingTuition)
+            const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator(color: Colors.red)))
+          else if (_tuitionCourses.isNotEmpty)
+            _buildLegacyTuitionDetail()
+          else
+            const Text(
+              'Chưa có Hóa đơn Học phí cho Học kỳ này.',
+              style: TextStyle(color: Colors.red, fontSize: 14),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegacyTuitionDetail() {
+    final isPaid = _tuitionStatus == 'paid';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Table(
+          border: TableBorder.all(color: Colors.grey.shade400, width: 1, borderRadius: BorderRadius.circular(2)),
+          columnWidths: const {
+            0: FlexColumnWidth(1),
+            1: FlexColumnWidth(2),
+            2: FlexColumnWidth(4.5),
+            3: FlexColumnWidth(1.5),
+            4: FlexColumnWidth(2.5),
+            5: FlexColumnWidth(2.5),
+          },
+          children: [
+            TableRow(
+              decoration: const BoxDecoration(color: Color(0xFFF5F5F5)),
+              children: [
+                _tableHeader('STT'),
+                _tableHeader('Mã môn'),
+                _tableHeader('Tên môn học / Học phần'),
+                _tableHeader('Tín chỉ'),
+                _tableHeader('Học phí'),
+                _tableHeader('Trạng thái'),
+              ],
+            ),
+            ...List.generate(_tuitionCourses.length, (idx) {
+              final course = _tuitionCourses[idx];
+              return TableRow(
+                children: [
+                  _tableCell((idx + 1).toString(), align: Alignment.center),
+                  _tableCell(course['courseId'] ?? 'N/A', align: Alignment.center),
+                  _tableCell(course['courseName'] ?? 'N/A'),
+                  _tableCell(course['credits']?.toString() ?? '0', align: Alignment.center),
+                  _tableCell(_formatCurrency(course['tuition'] ?? 0), align: Alignment.centerRight),
+                  _tableCell(isPaid ? 'Đã nộp' : 'Chưa nộp', 
+                    align: Alignment.center,
+                    textColor: isPaid ? Colors.green : Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('TỔNG CỘNG: ${_formatCurrency(_totalTuition)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+            if (!isPaid)
+              ElevatedButton(
+                onPressed: () {
+                  final invoiceDocId = _currentInvoiceDocId ?? '${FirebaseAuth.instance.currentUser?.uid}_${_selectedTuitionYear}_${_selectedTuitionSemester}'.replaceAll(' ', '_');
+                  _showQrPaymentDialog(context, _totalTuition, invoiceDocId);
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFC00000),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: const Text('THANH TOÁN', style: TextStyle(fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTuitionHistory() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: _tuitionHistoryStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: Colors.red)));
+          }
+          if (snapshot.hasError) {
+            return Center(child: Padding(padding: const EdgeInsets.all(32), child: Text('Lỗi: ${snapshot.error}', style: const TextStyle(color: Colors.black54))));
+          }
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có lịch sử xuất hóa đơn.', style: TextStyle(color: Colors.black54))));
+          }
+          return Table(
+            border: TableBorder.all(color: Colors.grey.shade400, width: 1),
+            columnWidths: const {
+              0: FlexColumnWidth(1),
+              1: FlexColumnWidth(2),
+              2: FlexColumnWidth(2),
+              3: FlexColumnWidth(3),
+              4: FlexColumnWidth(2.5),
+              5: FlexColumnWidth(2.5),
+            },
+            children: [
+              TableRow(
+                decoration: BoxDecoration(color: Colors.red.shade700),
+                children: [
+                  _tableHeader('STT', textColor: Colors.white),
+                  _tableHeader('Năm học', textColor: Colors.white),
+                  _tableHeader('Học kỳ', textColor: Colors.white),
+                  _tableHeader('Số tiền', textColor: Colors.white),
+                  _tableHeader('Trạng thái', textColor: Colors.white),
+                  _tableHeader('Ngày thanh toán', textColor: Colors.white),
+                ],
+              ),
+              ...List.generate(docs.length, (index) {
+                final data = docs[index].data() as Map<String, dynamic>;
+                final year = data['academicYear'] ?? 'N/A';
+                final semester = data['semester'] ?? 'N/A';
+                final amount = data['totalAmount'] ?? 0;
+                final status = data['status'] ?? 'unpaid';
+                final isPaid = status == 'paid';
+                final paymentDate = data['paymentDate'] as Timestamp?;
+                final dateStr = paymentDate != null 
+                    ? DateFormat('dd/MM/yyyy HH:mm').format(paymentDate.toDate())
+                    : (isPaid ? 'N/A' : '-');
+                
+                return TableRow(
+                  decoration: BoxDecoration(color: index % 2 == 0 ? Colors.white : Colors.grey.shade50),
+                  children: [
+                    _tableCell((index + 1).toString(), align: Alignment.center),
+                    _tableCell(year, align: Alignment.center),
+                    _tableCell(semester, align: Alignment.center),
+                    _tableCell('${_formatCurrency(amount)} đ', align: Alignment.centerRight, fontWeight: FontWeight.bold),
+                    _tableCell(
+                      isPaid ? 'Đã nộp' : (status == 'pending_verification' ? 'Đang duyệt' : 'Chưa nộp'),
+                      align: Alignment.center,
+                      textColor: isPaid ? Colors.green : (status == 'pending_verification' ? Colors.orange : Colors.red),
+                      fontWeight: FontWeight.bold,
+                    ),
+                    _tableCell(dateStr, align: Alignment.center),
+                  ],
+                );
+              }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDigitalInvoices() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      color: Colors.white,
+      child: StreamBuilder<QuerySnapshot>(
+        stream: _digitalInvoicesStream,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator(color: Colors.red)));
+          }
+          if (snapshot.hasError) {
+            return Center(child: Padding(padding: const EdgeInsets.all(32), child: Text('Lỗi: ${snapshot.error}', style: const TextStyle(color: Colors.black54))));
+          }
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) {
+            return const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có hóa đơn số nào.', style: TextStyle(color: Colors.black54))));
+          }
+          return Table(
+            border: TableBorder.all(color: Colors.grey.shade400, width: 1),
+            columnWidths: const {
+              0: FlexColumnWidth(1),
+              1: FlexColumnWidth(3),
+              2: FlexColumnWidth(2),
+              3: FlexColumnWidth(2),
+              4: FlexColumnWidth(3),
+              5: FlexColumnWidth(2),
+            },
+            children: [
+              TableRow(
+                decoration: BoxDecoration(color: Colors.red.shade700),
+                children: [
+                  _tableHeader('STT', textColor: Colors.white),
+                  _tableHeader('Hóa đơn số', textColor: Colors.white),
+                  _tableHeader('Năm học', textColor: Colors.white),
+                  _tableHeader('Học kỳ', textColor: Colors.white),
+                  _tableHeader('Thanh toán lúc', textColor: Colors.white),
+                  _tableHeader('Thao tác', textColor: Colors.white),
+                ],
+              ),
+              ...List.generate(docs.length, (index) {
+                final doc = docs[index];
+                final data = doc.data() as Map<String, dynamic>;
+                final invoiceNo = doc.id.replaceAll('_', '').toUpperCase().substring(0, 10);
+                final year = data['academicYear'] ?? 'N/A';
+                final semester = data['semester'] ?? 'N/A';
+                final paymentDate = data['paymentDate'] as Timestamp?;
+                final dateStr = paymentDate != null 
+                    ? DateFormat('dd/MM/yyyy HH:mm').format(paymentDate.toDate())
+                    : 'N/A';
+                
+                return TableRow(
+                  decoration: BoxDecoration(color: index % 2 == 0 ? Colors.white : Colors.grey.shade50),
+                  children: [
+                    _tableCell((index + 1).toString(), align: Alignment.center),
+                    _tableCell('HD-$invoiceNo', align: Alignment.center, fontWeight: FontWeight.bold, textColor: Colors.blue.shade700),
+                    _tableCell(year, align: Alignment.center),
+                    _tableCell(semester, align: Alignment.center),
+                    _tableCell(dateStr, align: Alignment.center),
+                    Container(
+                      alignment: Alignment.center,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: IconButton(
+                        icon: const Icon(Icons.download, color: Colors.blue),
+                        iconSize: 20,
+                        tooltip: 'Tải hóa đơn',
+                        onPressed: () {
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tính năng tải hóa đơn số đang được phát triển.')));
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              }),
+            ],
+          );
+        },
       ),
     );
   }
@@ -3458,74 +3818,62 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 24),
             
-            const Text(
-              'Năm học',
-              style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
+            // Year Selection Card
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade300),
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedTuitionYear,
-                  isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down, color: Colors.black54),
-                  style: const TextStyle(color: Colors.black87, fontSize: 13),
-                  items: const [
-                    DropdownMenuItem(value: '2024-2025', child: Text('2024-2025')),
-                    DropdownMenuItem(value: '2025-2026', child: Text('2025-2026')),
-                    DropdownMenuItem(value: '2026-2027', child: Text('2026-2027')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _selectedTuitionYear = value;
-                      });
-                    }
-                  },
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Năm học',
+                    style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _buildYearChip('2024-2025'),
+                      _buildYearChip('2025-2026'),
+                      _buildYearChip('2026-2027'),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
             
-            const Text(
-              'Học kỳ',
-              style: TextStyle(color: Colors.black87, fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
+            // Semester Selection Card
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade300),
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedTuitionSemester,
-                  isExpanded: true,
-                  icon: const Icon(Icons.arrow_drop_down, color: Colors.black54),
-                  style: const TextStyle(color: Colors.black87, fontSize: 13),
-                  items: const [
-                    DropdownMenuItem(value: 'Học kỳ 1', child: Text('Học kỳ 1')),
-                    DropdownMenuItem(value: 'Học kỳ 2', child: Text('Học kỳ 2')),
-                    DropdownMenuItem(value: 'Học kỳ Hè', child: Text('Học kỳ Hè')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _selectedTuitionSemester = value;
-                      });
-                    }
-                  },
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Học kỳ',
+                    style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _buildSemesterChip('Học kỳ 1'),
+                      _buildSemesterChip('Học kỳ 2'),
+                      _buildSemesterChip('Học kỳ Hè'),
+                    ],
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 24),
@@ -3558,9 +3906,86 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildYearChip(String year) {
+    final isSelected = _selectedTuitionYear == year;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTuitionYear = year;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFC00000) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFC00000) : Colors.grey.shade300,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFC00000).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          year,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black87,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSemesterChip(String semester) {
+    final isSelected = _selectedTuitionSemester == semester;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedTuitionSemester = semester;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFC00000) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFFC00000) : Colors.grey.shade300,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFC00000).withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          semester,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black87,
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTuitionDetail() {
-    final invoiceDocId = '${FirebaseAuth.instance.currentUser?.uid}_$_selectedTuitionYear$_selectedTuitionSemester'.replaceAll(' ', '_');
+    final invoiceDocId = _currentInvoiceDocId ?? '${FirebaseAuth.instance.currentUser?.uid}_${_selectedTuitionYear}_${_selectedTuitionSemester}'.replaceAll(' ', '_');
     final isPaid = _tuitionStatus == 'paid';
+    final isPending = _tuitionStatus == 'pending_verification';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3666,7 +4091,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        '${_formatCurrency(_totalTuition)} VNĐ',
+                        isPaid ? '0 VNĐ' : '${_formatCurrency(_totalTuition)} VNĐ',
                         style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                     ],
@@ -3723,6 +4148,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             );
                           }),
+                          TableRow(
+                            children: [
+                              _tableCell(''),
+                              _tableCell(''),
+                              _tableCell('Phụ phí kỳ học (Base Fee)', fontWeight: FontWeight.bold),
+                              _tableCell(''),
+                              _tableCell(_formatCurrency(_baseFee), align: Alignment.centerRight, fontWeight: FontWeight.bold),
+                              _tableCell(''),
+                            ]
+                          ),
                         ],
                       ),
                     ],
@@ -3780,28 +4215,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         )
+                      else if (isPending)
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.orange, width: 3),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'ĐANG CHỜ XÁC NHẬN MINH CHỨNG',
+                              style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1),
+                            ),
+                          ),
+                        )
                       else
                         Row(
                           children: [
                             Expanded(
                               child: ElevatedButton.icon(
-                                onPressed: () => _showZaloPayDialog(context, _totalTuition, invoiceDocId),
+                                onPressed: () => _showQrPaymentDialog(context, _totalTuition, invoiceDocId),
                                 icon: const Icon(Icons.qr_code_scanner, size: 18),
-                                label: const Text('Thanh toán ZaloPay'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF00A6FF),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(vertical: 14),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => _showCardPaymentDialog(context, _totalTuition, invoiceDocId),
-                                icon: const Icon(Icons.credit_card, size: 18),
-                                label: const Text('Thanh toán qua Thẻ'),
+                                label: const Text('Thanh toán qua QR'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFFC00000),
                                   foregroundColor: Colors.white,
@@ -3822,13 +4257,13 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _tableHeader(String text) {
+  Widget _tableHeader(String text, {Color textColor = Colors.black87}) {
     return Container(
       padding: const EdgeInsets.all(12),
       alignment: Alignment.center,
       child: Text(
         text,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black87),
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: textColor),
         textAlign: TextAlign.center,
       ),
     );
@@ -3936,121 +4371,197 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showZaloPayDialog(BuildContext context, int totalAmount, String docId) {
-    bool localSubmitting = false;
-    Timer? localTimer;
-    int secondsLeft = 900;
-
+  // QR Payment & Proof Upload
+  void _showQrPaymentDialog(BuildContext context, int totalAmount, String docId) {
+    bool isUploading = false;
+    final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final viewId = 'qr-image-$totalAmount-$uid-${DateTime.now().millisecondsSinceEpoch}';
+    
+    // Register the iframe/image for Flutter Web
+    if (kIsWeb) {
+      ui_web.platformViewRegistry.registerViewFactory(viewId, (int id) {
+        final img = web.HTMLImageElement()
+          ..src = 'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=MSSV%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK'
+          ..style.width = '100%'
+          ..style.height = '100%'
+          ..style.objectFit = 'contain';
+        return img;
+      });
+    }
+    
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            if (localTimer == null) {
-              localTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                if (secondsLeft > 0) {
-                  setDialogState(() {
-                    secondsLeft--;
-                  });
-                } else {
-                  timer.cancel();
-                  if (ctx.mounted) Navigator.pop(ctx);
-                }
-              });
-            }
-
-            int mins = secondsLeft ~/ 60;
-            int secs = secondsLeft % 60;
-            String timeStr = '${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
-
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1E1E1E),
+          builder: (ctx, setDialogState) {
+            return Dialog(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              contentPadding: const EdgeInsets.all(24),
-              content: SizedBox(
-                width: 320,
+              backgroundColor: Colors.white,
+              child: Container(
+                width: 400,
+                padding: const EdgeInsets.all(24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Ví ZaloPay', style: TextStyle(color: Color(0xFF00A6FF), fontWeight: FontWeight.bold, fontSize: 18)),
+                        const Text('Thanh toán qua mã QR', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black)),
                         IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white60),
-                          onPressed: () {
-                            localTimer?.cancel();
-                            Navigator.pop(ctx);
-                          },
+                          icon: const Icon(Icons.close, color: Colors.black54),
+                          onPressed: () => Navigator.pop(ctx),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Quét mã QR để thanh toán',
-                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
-                    ),
+                    const Divider(),
                     const SizedBox(height: 16),
                     
-                    const MockQrCode(),
+                    // Bank Info
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text('Ngân hàng Thương mại Cổ phần Quân đội (MBBank)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87), textAlign: TextAlign.center),
+                          const SizedBox(height: 8),
+                          const Text('Tên tài khoản: TRUONG DAI HOC EDUTRACK', style: TextStyle(color: Colors.black87)),
+                          const SizedBox(height: 4),
+                          const Text('Số tài khoản: 0123456789', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
+                          const SizedBox(height: 4),
+                          Text('Nội dung CK: MSSV - ${_formatCurrency(totalAmount)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
                     
-                    const SizedBox(height: 16),
-                    Text(
-                      'Mã QR hết hạn sau: $timeStr',
-                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 12, fontWeight: FontWeight.bold),
+                    const SizedBox(height: 24),
+                    
+                    // Dynamic QR Code
+                    Container(
+                      width: 200,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue.withValues(alpha: 0.1)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: kIsWeb 
+                          ? HtmlElementView(viewType: viewId)
+                          : Image.network(
+                              'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=MSSV%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK',
+                              fit: BoxFit.contain,
+                              loadingBuilder: (context, child, loadingProgress) {
+                                if (loadingProgress == null) return child;
+                                return const Center(child: CircularProgressIndicator());
+                              },
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Center(
+                                  child: Icon(Icons.qr_code_2, size: 100, color: Colors.black54),
+                                );
+                              },
+                            ),
+                      ),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Số tiền: ${_formatCurrency(totalAmount)} VNĐ',
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Nội dung: Thanh toan hoc phi',
-                      style: TextStyle(color: Colors.white54, fontSize: 11),
-                    ),
+                    
+                    const SizedBox(height: 24),
+                    const Text('Sau khi thanh toán thành công, vui lòng tải ảnh chụp màn hình minh chứng lên để Admin xét duyệt.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, fontSize: 13)),
                     const SizedBox(height: 24),
                     
                     SizedBox(
                       width: double.infinity,
-                      height: 44,
                       child: ElevatedButton.icon(
-                        onPressed: localSubmitting ? null : () async {
-                          setDialogState(() { localSubmitting = true; });
+                        onPressed: isUploading ? null : () async {
+                          final result = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            imageQuality: 60,
+                            maxWidth: 1200,
+                            maxHeight: 1200,
+                          );
+                          if (result == null) return;
                           
-                          await Future.delayed(const Duration(seconds: 2));
-
+                          setDialogState(() {
+                            isUploading = true;
+                          });
+                          
                           try {
-                            await FirebaseFirestore.instance.collection('tuition_fees').doc(docId).update({
-                              'status': 'paid',
-                              'paymentMethod': 'zalopay',
-                              'paymentDate': FieldValue.serverTimestamp(),
+                            final bytes = await result.readAsBytes();
+                            final fileName = 'proof_${DateTime.now().millisecondsSinceEpoch}_${result.name}';
+                            final base64String = base64Encode(bytes);
+                            
+                            final response = await http.post(
+                              Uri.parse('https://setcors-pvqsiluuja-uc.a.run.app'),
+                              headers: {'Content-Type': 'application/json'},
+                              body: jsonEncode({
+                                'base64Data': base64String,
+                                'mimeType': result.mimeType ?? 'image/jpeg',
+                                'fileName': fileName,
+                              }),
+                            ).timeout(const Duration(seconds: 25), onTimeout: () {
+                              throw Exception('Upload timeout. Vui lòng kiểm tra lại mạng hoặc thử lại.');
                             });
-
-                            localTimer?.cancel();
+                            
+                            if (response.statusCode != 200) {
+                              throw Exception('Lỗi server: ${response.body}');
+                            }
+                            
+                            final responseData = jsonDecode(response.body);
+                            final downloadUrl = responseData['url'];
+                            
+                            await FirebaseFirestore.instance.collection('tuition_fees').doc(docId).set({
+                              'studentId': uid,
+                              'academicYear': _selectedTuitionYear,
+                              'semester': _selectedTuitionSemester,
+                              'courses': _tuitionCourses,
+                              'totalAmount': totalAmount,
+                              'status': 'pending_verification',
+                              'proofUrl': downloadUrl,
+                              'paymentMethod': 'qr_transfer',
+                              'paymentDate': FieldValue.serverTimestamp(),
+                            }, SetOptions(merge: true));
+                            
                             if (context.mounted) {
                               Navigator.pop(ctx);
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Thanh toán qua ZaloPay thành công!'), backgroundColor: Colors.green),
+                                const SnackBar(content: Text('Đã tải minh chứng thành công! Đang chờ Admin duyệt.'), backgroundColor: Colors.green),
                               );
                               _loadTuitionData();
                             }
                           } catch (e) {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('Lỗi giao dịch: $e'), backgroundColor: Colors.red),
+                                SnackBar(content: Text('Lỗi tải ảnh: $e'), backgroundColor: Colors.red),
                               );
                             }
                           } finally {
-                            setDialogState(() { localSubmitting = false; });
+                            if (mounted) {
+                              setDialogState(() {
+                                isUploading = false;
+                              });
+                            }
                           }
                         },
-                        icon: const Icon(Icons.check_circle_outline),
-                        label: const Text('Giả lập quét mã thành công', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        icon: isUploading 
+                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.upload_file),
+                        label: Text(isUploading ? 'Đang tải lên...' : 'Tải lên Minh chứng', style: const TextStyle(fontWeight: FontWeight.bold)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF00A86B),
+                          backgroundColor: const Color(0xFFC00000),
                           foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
                       ),
@@ -4064,314 +4575,6 @@ class _HomeScreenState extends State<HomeScreen> {
       },
     );
   }
-
-  void _showCardPaymentDialog(BuildContext context, int totalAmount, String docId) {
-    final cardNoCtrl = TextEditingController();
-    final holderCtrl = TextEditingController();
-    final expiryCtrl = TextEditingController();
-    final cvvCtrl = TextEditingController();
-    bool localSubmitting = false;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            String cleanNo = cardNoCtrl.text.replaceAll(RegExp(r'\s+'), '');
-            String displayNo = '';
-            for (int i = 0; i < 16; i++) {
-              if (i < cleanNo.length) {
-                displayNo += cleanNo[i];
-              } else {
-                displayNo += '•';
-              }
-              if ((i + 1) % 4 == 0 && i < 15) {
-                displayNo += '  ';
-              }
-            }
-
-            String displayHolder = holderCtrl.text.isEmpty ? 'TEN CHU THE' : holderCtrl.text.toUpperCase();
-            String displayExpiry = expiryCtrl.text.isEmpty ? 'MM/YY' : expiryCtrl.text;
-            String displayCvv = cvvCtrl.text.isEmpty ? '•••' : cvvCtrl.text;
-
-            IconData cardIcon = Icons.credit_card;
-            Color cardColor = const Color(0xFF1E3C72);
-            Color cardColor2 = const Color(0xFF2A5298);
-            if (cleanNo.startsWith('4')) {
-              cardIcon = Icons.payment;
-              cardColor = const Color(0xFF0F2027);
-              cardColor2 = const Color(0xFF203A43);
-            } else if (cleanNo.startsWith('5')) {
-              cardColor = const Color(0xFF373B44);
-              cardColor2 = const Color(0xFF4286f4);
-            }
-
-            return AlertDialog(
-              backgroundColor: const Color(0xFF1E1E1E),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              contentPadding: const EdgeInsets.all(24),
-              content: SingleChildScrollView(
-                child: SizedBox(
-                  width: 400,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Thanh toán bằng Thẻ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white60),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      
-                      Container(
-                        width: double.infinity,
-                        height: 180,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [cardColor, cardColor2], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4)),
-                          ],
-                        ),
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                const Icon(Icons.contactless, color: Colors.white, size: 24),
-                                Icon(cardIcon, color: Colors.white, size: 30),
-                              ],
-                            ),
-                            Text(
-                              displayNo,
-                              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.5),
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('CHỦ THẺ', style: TextStyle(color: Colors.white30, fontSize: 9)),
-                                    const SizedBox(height: 2),
-                                    Text(displayHolder, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('HẠN DÙNG', style: TextStyle(color: Colors.white30, fontSize: 9)),
-                                    const SizedBox(height: 2),
-                                    Text(displayExpiry, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text('CVV', style: TextStyle(color: Colors.white30, fontSize: 9)),
-                                    const SizedBox(height: 2),
-                                    Text(displayCvv, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      TextField(
-                        controller: cardNoCtrl,
-                        keyboardType: TextInputType.number,
-                        maxLength: 19,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'Số thẻ (16 chữ số)',
-                          hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                          prefixIcon: const Icon(Icons.credit_card, color: Colors.white38),
-                          counterText: '',
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.05),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                        ),
-                        onChanged: (v) {
-                          String digits = v.replaceAll(RegExp(r'\D'), '');
-                          if (digits.length > 16) digits = digits.substring(0, 16);
-                          
-                          String formatted = '';
-                          for (int i = 0; i < digits.length; i++) {
-                            formatted += digits[i];
-                            if ((i + 1) % 4 == 0 && i < 15 && i < digits.length - 1) {
-                              formatted += ' ';
-                            }
-                          }
-                          
-                          cardNoCtrl.value = TextEditingValue(
-                            text: formatted,
-                            selection: TextSelection.collapsed(offset: formatted.length),
-                          );
-                          setDialogState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      TextField(
-                        controller: holderCtrl,
-                        textCapitalization: TextCapitalization.characters,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
-                        decoration: InputDecoration(
-                          hintText: 'TÊN CHỦ THẺ (Không dấu)',
-                          hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                          prefixIcon: const Icon(Icons.person_outline, color: Colors.white38),
-                          filled: true,
-                          fillColor: Colors.white.withValues(alpha: 0.05),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                        ),
-                        onChanged: (v) {
-                          setDialogState(() {});
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: expiryCtrl,
-                              keyboardType: TextInputType.number,
-                              maxLength: 5,
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: 'MM/YY',
-                                hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                                prefixIcon: const Icon(Icons.date_range, color: Colors.white38),
-                                counterText: '',
-                                filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.05),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                              ),
-                              onChanged: (v) {
-                                String clean = v.replaceAll(RegExp(r'\D'), '');
-                                if (clean.length > 4) clean = clean.substring(0, 4);
-                                String formatted = clean;
-                                if (clean.length > 2) {
-                                  formatted = '${clean.substring(0, 2)}/${clean.substring(2)}';
-                                }
-                                expiryCtrl.value = TextEditingValue(
-                                  text: formatted,
-                                  selection: TextSelection.collapsed(offset: formatted.length),
-                                );
-                                setDialogState(() {});
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextField(
-                              controller: cvvCtrl,
-                              keyboardType: TextInputType.number,
-                              obscureText: true,
-                              maxLength: 3,
-                              style: const TextStyle(color: Colors.white, fontSize: 14),
-                              decoration: InputDecoration(
-                                hintText: 'Mã CVV',
-                                hintStyle: const TextStyle(color: Colors.white30, fontSize: 14),
-                                prefixIcon: const Icon(Icons.lock_outline, color: Colors.white38),
-                                counterText: '',
-                                filled: true,
-                                fillColor: Colors.white.withValues(alpha: 0.05),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-                              ),
-                              onChanged: (v) {
-                                setDialogState(() {});
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: localSubmitting ? null : () async {
-                            if (cleanNo.length < 16) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Số thẻ phải có 16 chữ số!'), backgroundColor: Colors.red));
-                              return;
-                            }
-                            if (holderCtrl.text.trim().isEmpty) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập tên chủ thẻ!'), backgroundColor: Colors.red));
-                              return;
-                            }
-                            if (expiryCtrl.text.length < 5) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập ngày hết hạn MM/YY!'), backgroundColor: Colors.red));
-                              return;
-                            }
-                            if (cvvCtrl.text.length < 3) {
-                              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng nhập mã bảo mật CVV!'), backgroundColor: Colors.red));
-                              return;
-                            }
-
-                            setDialogState(() { localSubmitting = true; });
-
-                            await Future.delayed(const Duration(seconds: 2));
-
-                            try {
-                              await FirebaseFirestore.instance.collection('tuition_fees').doc(docId).update({
-                                'status': 'paid',
-                                'paymentMethod': 'card',
-                                'paymentDate': FieldValue.serverTimestamp(),
-                              });
-
-                              if (context.mounted) {
-                                Navigator.pop(ctx);
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Thanh toán học phí qua Thẻ thành công!'), backgroundColor: Colors.green),
-                                );
-                                _loadTuitionData();
-                              }
-                            } catch (e) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('Lỗi giao dịch: $e'), backgroundColor: Colors.red),
-                                );
-                              }
-                            } finally {
-                              setDialogState(() { localSubmitting = false; });
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFC00000),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: localSubmitting
-                              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : Text('Thanh toán ${_formatCurrency(totalAmount)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   Future<void> _loadTuitionData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
@@ -4393,19 +4596,24 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _tuitionCourses = [];
             _totalTuition = 0;
+            _baseFee = 0;
             _tuitionStatus = 'unpaid';
             _paymentMethod = null;
             _paymentDate = null;
             _showTuitionSelector = false;
             _isLoadingTuition = false;
+            _currentInvoiceDocId = null;
           });
         }
         return;
       }
 
-      final tuitionData = snapshot.docs.first.data();
+      final doc = snapshot.docs.first;
+      final tuitionData = doc.data();
+      _currentInvoiceDocId = doc.id;
       final courses = tuitionData['courses'] as List<dynamic>? ?? [];
       final total = tuitionData['totalAmount'] as int? ?? 0;
+      final bFee = tuitionData['baseFee'] as int? ?? 0;
       final status = tuitionData['status'] ?? 'unpaid';
       final pMethod = tuitionData['paymentMethod'] as String?;
       final pDate = (tuitionData['paymentDate'] as Timestamp?)?.toDate();
@@ -4414,6 +4622,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _tuitionCourses = courses.cast<Map<String, dynamic>>();
           _totalTuition = total;
+          _baseFee = bFee;
           _tuitionStatus = status;
           _paymentMethod = pMethod;
           _paymentDate = pDate;
@@ -4606,6 +4815,617 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  // --- DETAILED GRADES SECTION ---
+  Widget _buildDetailedGradesContent() {
+    if (!_isShowingGradesList) {
+      return _buildGradesSelector();
+    }
+    if (_selectedCourseForGrades == null) {
+      return _buildGradesCourseList();
+    }
+    if (_gradeViewMode == 'personal') {
+      return _buildPersonalGrades();
+    } else {
+      return _buildAssignmentGrades();
+    }
+  }
+
+  Widget _buildGradesSelector() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildScreenHeader(Icons.calendar_month, 'XEM ĐIỂM CỤ THỂ'),
+          const SizedBox(height: 32),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade700, width: 1),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Bảng điểm Cụ thể', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      const Text('Chọn Năm học:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 16),
+                      DropdownButton<String>(
+                        value: _selectedGradesYear,
+                        items: ['2024-2025', '2025-2026', '2026-2027'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedGradesYear = val);
+                        },
+                      ),
+                      const SizedBox(width: 48),
+                      const Text('Chọn Học kỳ:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 16),
+                      DropdownButton<String>(
+                        value: _selectedGradesSemester,
+                        items: ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                        onChanged: (val) {
+                          if (val != null) setState(() => _selectedGradesSemester = val);
+                        },
+                      ),
+                      const Spacer(),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
+                        onPressed: () {
+                          setState(() {
+                            _isShowingGradesList = true;
+                          });
+                        },
+                        child: const Text('Tiếp tục'),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(2),
+                      1: FlexColumnWidth(4),
+                      2: FlexColumnWidth(2),
+                      3: FlexColumnWidth(2),
+                    },
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(color: Colors.grey.shade200),
+                        children: [
+                          _tableHeader('Mã Lớp'),
+                          _tableHeader('Tên Môn'),
+                          _tableHeader('Hình Thức'),
+                          _tableHeader('Bậc Học'),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          _tableCell(''),
+                          _tableCell('Không có lớp nào', align: Alignment.center, textColor: Colors.red),
+                          _tableCell(''),
+                          _tableCell(''),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGradesCourseList() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return const SizedBox.shrink();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.red),
+                onPressed: () {
+                  setState(() {
+                    _isShowingGradesList = false;
+                  });
+                },
+              ),
+              _buildScreenHeader(Icons.calendar_month, 'XEM ĐIỂM CỤ THỂ'),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade700, width: 1),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Bảng điểm Cụ thể', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      const Text('Chọn Năm học:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 16),
+                      Text(_selectedGradesYear, style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 48),
+                      const Text('Chọn Học kỳ:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 16),
+                      Text(_selectedGradesSemester, style: const TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('registrations')
+                      .where('userId', isEqualTo: user.uid)
+                      .where('academicYear', isEqualTo: _selectedGradesYear)
+                      .where('semester', isEqualTo: _selectedGradesSemester)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator(color: Colors.red)));
+                    }
+
+                    final docs = snapshot.data?.docs ?? [];
+
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Table(
+                        border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                        columnWidths: const {
+                          0: FlexColumnWidth(2),
+                          1: FlexColumnWidth(4),
+                          2: FlexColumnWidth(2),
+                          3: FlexColumnWidth(2),
+                          4: FlexColumnWidth(3),
+                        },
+                        children: [
+                          TableRow(
+                            decoration: BoxDecoration(color: Colors.grey.shade200),
+                            children: [
+                              _tableHeader('Mã Lớp'),
+                              _tableHeader('Tên Môn'),
+                              _tableHeader('Hình Thức'),
+                              _tableHeader('Bậc Học'),
+                              _tableHeader(''),
+                            ],
+                          ),
+                          if (docs.isEmpty)
+                            TableRow(
+                              children: [
+                                _tableCell(''),
+                                _tableCell('Không có lớp nào', align: Alignment.center, textColor: Colors.red),
+                                _tableCell(''),
+                                _tableCell(''),
+                                _tableCell(''),
+                              ],
+                            )
+                          else
+                            ...docs.map((doc) {
+                              final data = doc.data() as Map<String, dynamic>;
+                              final courseId = data['courseId'] ?? 'N/A';
+                              final courseName = data['courseName'] ?? 'N/A';
+                              return TableRow(
+                                children: [
+                                  _tableCell(courseId),
+                                  _tableCell(courseName),
+                                  _tableCell('LEC', align: Alignment.center),
+                                  _tableCell('Đại Học, Cao Đẳng', align: Alignment.center),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        InkWell(
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedCourseForGrades = {'docId': doc.id, 'courseId': courseId, 'courseName': courseName, 'courseDocId': data['courseDocId']};
+                                              _gradeViewMode = 'personal';
+                                            });
+                                          },
+                                          child: const Text('Xem điểm Cá nhân', style: TextStyle(color: Colors.blue, decoration: TextDecoration.underline, fontSize: 13)),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        InkWell(
+                                          onTap: () {
+                                            setState(() {
+                                              _selectedCourseForGrades = {'docId': doc.id, 'courseId': courseId, 'courseName': courseName, 'courseDocId': data['courseDocId']};
+                                              _gradeViewMode = 'assignments';
+                                            });
+                                          },
+                                          child: const Text('Xem điểm Bài tập', style: TextStyle(color: Colors.blue, decoration: TextDecoration.underline, fontSize: 13)),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPersonalGrades() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || _selectedCourseForGrades == null) return [];
+
+    final courseDocId = _selectedCourseForGrades!['courseDocId'];
+    if (courseDocId == null || courseDocId.toString().isEmpty) return [];
+    
+    final regSnap = await FirebaseFirestore.instance.collection('registrations')
+        .where('courseDocId', isEqualTo: courseDocId)
+        .where('userId', isEqualTo: user.uid).get();
+        
+    if (regSnap.docs.isEmpty) return [];
+    
+    final regData = regSnap.docs.first.data();
+    final status = regData['gradeStatus'] ?? 'none';
+    
+    if (status != 'admin_published') {
+        return [{'title': 'Bảng điểm đang chờ cập nhật hoặc chưa được công bố.', 'type': 'info', 'grade': null, 'maxGrade': null}];
+    }
+    
+    List<Map<String, dynamic>> results = [];
+    
+    final att = regData['attendanceScore'];
+    final mid = regData['midtermScore'];
+    final fin = regData['finalScore'];
+    
+    if (att != null) results.add({'title': 'Chuyên cần', 'type': 'Chuyên cần', 'grade': (att as num).toDouble(), 'maxGrade': 10.0, 'weight': 10.0});
+    if (mid != null) results.add({'title': 'Giữa kỳ', 'type': 'Giữa kỳ', 'grade': (mid as num).toDouble(), 'maxGrade': 10.0, 'weight': 20.0});
+    if (fin != null) results.add({'title': 'Cuối kỳ', 'type': 'Cuối kỳ', 'grade': (fin as num).toDouble(), 'maxGrade': 10.0, 'weight': 70.0});
+    
+    final detailed = regData['detailedGrades'] as List<dynamic>? ?? [];
+    for (var item in detailed) {
+        if (item is Map<String, dynamic>) {
+            results.add({
+              'title': item['title'],
+              'type': item['type'],
+              'grade': (item['grade'] as num?)?.toDouble(),
+              'maxGrade': (item['maxGrade'] as num?)?.toDouble() ?? 10.0,
+              'weight': 0.0, // Detailed grades might not have a direct global weight in this simple display
+            });
+        }
+    }
+    
+    return results;
+  }
+
+  Widget _buildPersonalGrades() {
+    final courseId = _selectedCourseForGrades?['courseId'] ?? '';
+    final courseName = _selectedCourseForGrades?['courseName'] ?? '';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.red),
+                onPressed: () {
+                  setState(() {
+                    _selectedCourseForGrades = null;
+                  });
+                },
+              ),
+              _buildScreenHeader(Icons.calendar_month, 'XEM ĐIỂM CỤ THỂ'),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade700, width: 1),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Điểm Cá nhân', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      'TÊN LỚP: $courseId - ${courseName.toUpperCase()}',
+                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                ),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _fetchPersonalGrades(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator(color: Colors.red)));
+                    }
+
+                    final items = snapshot.data ?? [];
+                    if (items.isNotEmpty && items.first['type'] == 'info') {
+                      return Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Column(
+                            children: [
+                              Icon(Icons.lock_clock, size: 48, color: Colors.grey.shade400),
+                              const SizedBox(height: 16),
+                              Text(items.first['title'], style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    double totalScorePercent = 0;
+
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Table(
+                        border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                        columnWidths: const {
+                          0: FlexColumnWidth(1),
+                          1: FlexColumnWidth(4),
+                          2: FlexColumnWidth(2),
+                          3: FlexColumnWidth(2),
+                          4: FlexColumnWidth(2),
+                          5: FlexColumnWidth(2),
+                          6: FlexColumnWidth(2),
+                        },
+                        children: [
+                          TableRow(
+                            decoration: BoxDecoration(color: Colors.grey.shade200),
+                            children: [
+                              _tableHeader(''),
+                              _tableHeader('Tên Cột Điểm'),
+                              _tableHeader('Điểm'),
+                              _tableHeader('Loại'),
+                              _tableHeader('Thang Điểm'),
+                              _tableHeader('% Trọng số'),
+                              _tableHeader('% Quy đổi'),
+                            ],
+                          ),
+                          ...items.asMap().entries.map((entry) {
+                            int idx = entry.key;
+                            var item = entry.value;
+                            double? grade = item['grade'];
+                            double maxGrade = item['maxGrade'] ?? 10.0;
+                            if (maxGrade == 0) maxGrade = 10.0; // Avoid division by zero
+                            
+                            double weight = (item['weight'] as num?)?.toDouble() ?? 0.0;
+                            double percent = grade != null ? (grade / maxGrade) * weight : 0;
+                            totalScorePercent += percent;
+
+                            return TableRow(
+                              children: [
+                                _tableCell('${idx + 1}', align: Alignment.center),
+                                _tableCell(item['title'] ?? ''),
+                                _tableCell(grade?.toStringAsFixed(1) ?? '-', align: Alignment.center, fontWeight: FontWeight.bold),
+                                _tableCell(item['type'] ?? '', align: Alignment.center),
+                                _tableCell(maxGrade.toStringAsFixed(1), align: Alignment.center),
+                                _tableCell(weight > 0 ? '${weight.toStringAsFixed(0)}%' : '-', align: Alignment.center),
+                                _tableCell(weight > 0 ? percent.toStringAsFixed(1) : '-', align: Alignment.center),
+                              ],
+                            );
+                          }),
+                          TableRow(
+                            children: [
+                              _tableCell(''),
+                              _tableCell(''),
+                              _tableCell(''),
+                              _tableCell(''),
+                              _tableCell('TỔNG HỆ 10:', align: Alignment.centerRight, fontWeight: FontWeight.bold),
+                              _tableCell('${(totalScorePercent / 10).toStringAsFixed(1)}', align: Alignment.center, fontWeight: FontWeight.bold),
+                              _tableCell(''),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAssignmentGrades() {
+    final courseId = _selectedCourseForGrades?['courseId'] ?? '';
+    final courseName = _selectedCourseForGrades?['courseName'] ?? '';
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(32),
+      physics: const BouncingScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.red),
+                onPressed: () {
+                  setState(() {
+                    _selectedCourseForGrades = null;
+                  });
+                },
+              ),
+              _buildScreenHeader(Icons.calendar_month, 'XEM ĐIỂM CỤ THỂ'),
+            ],
+          ),
+          const SizedBox(height: 32),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.red.shade700, width: 1),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade700,
+                    borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Điểm Bài tập', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Center(
+                    child: Text(
+                      'TÊN LỚP: $courseId - ${courseName.toUpperCase()}',
+                      style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                  ),
+                ),
+                FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _fetchPersonalGrades(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(padding: EdgeInsets.all(32), child: Center(child: CircularProgressIndicator(color: Colors.red)));
+                    }
+
+                    final allItems = snapshot.data ?? [];
+                    final items = allItems.where((i) => i['type'] == 'assignment').toList();
+                    double weightPerItem = allItems.isEmpty ? 0 : (100.0 / allItems.length); // Weight is based on all items
+
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Table(
+                        border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                        columnWidths: const {
+                          0: FlexColumnWidth(1),
+                          1: FlexColumnWidth(4),
+                          2: FlexColumnWidth(2),
+                          3: FlexColumnWidth(2),
+                          4: FlexColumnWidth(2),
+                          5: FlexColumnWidth(2),
+                        },
+                        children: [
+                          TableRow(
+                            decoration: BoxDecoration(color: Colors.grey.shade200),
+                            children: [
+                              _tableHeader(''),
+                              _tableHeader('Tên Bài Giao'),
+                              _tableHeader('% Điểm'),
+                              _tableHeader('Thang Điểm'),
+                              _tableHeader('Ngày giao'),
+                              _tableHeader('Ngày nộp'),
+                            ],
+                          ),
+                          ...items.asMap().entries.map((entry) {
+                            int idx = entry.key;
+                            var item = entry.value;
+                            
+                            String assignedDate = 'N/A';
+                            if (item['createdAt'] is Timestamp) {
+                              final d = (item['createdAt'] as Timestamp).toDate();
+                              assignedDate = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+                            }
+                            
+                            String submittedDate = 'Chưa nộp';
+                            if (item['submittedAt'] is Timestamp) {
+                              final d = (item['submittedAt'] as Timestamp).toDate();
+                              submittedDate = '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+                            }
+
+                            return TableRow(
+                              children: [
+                                _tableCell('${idx + 1}', align: Alignment.center),
+                                _tableCell(item['title'] ?? ''),
+                                _tableCell('${weightPerItem.toStringAsFixed(2)}%', align: Alignment.center),
+                                _tableCell(item['maxGrade']?.toString() ?? '10', align: Alignment.center),
+                                _tableCell(assignedDate, align: Alignment.center),
+                                _tableCell(submittedDate, align: Alignment.center),
+                              ],
+                            );
+                          }),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class MockQrCode extends StatelessWidget {
@@ -4649,4 +5469,7 @@ class MockQrCode extends StatelessWidget {
       ),
     );
   }
+
 }
+
+

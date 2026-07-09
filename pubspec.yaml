@@ -25,6 +25,8 @@ dependencies:
   intl: ^0.20.3
   url_launcher: ^6.3.2
   web: ^1.1.1
+  firebase_storage: ^13.4.3
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
