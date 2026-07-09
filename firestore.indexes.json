@@ -60,6 +60,25 @@
         { "fieldPath": "quizId", "order": "ASCENDING" },
         { "fieldPath": "userId", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "tuition_fees",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "academicYear", "order": "DESCENDING" },
+        { "fieldPath": "semester", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "tuition_fees",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "studentId", "order": "ASCENDING" },
+        { "fieldPath": "academicYear", "order": "DESCENDING" },
+        { "fieldPath": "semester", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
