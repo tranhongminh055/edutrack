@@ -4381,7 +4381,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (kIsWeb) {
       ui_web.platformViewRegistry.registerViewFactory(viewId, (int id) {
         final img = web.HTMLImageElement()
-          ..src = 'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=MSSV%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK'
+          ..src = 'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=${widget.studentId.isNotEmpty ? widget.studentId : "MSSV"}%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK'
           ..style.width = '100%'
           ..style.height = '100%'
           ..style.objectFit = 'contain';
@@ -4434,7 +4434,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 4),
                           const Text('Số tài khoản: 0123456789', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue)),
                           const SizedBox(height: 4),
-                          Text('Nội dung CK: MSSV - ${_formatCurrency(totalAmount)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                          Text('Nội dung CK: ${widget.studentId.isNotEmpty ? widget.studentId : "MSSV"} - ${_formatCurrency(totalAmount)}', style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -4462,7 +4462,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: kIsWeb 
                           ? HtmlElementView(viewType: viewId)
                           : Image.network(
-                              'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=MSSV%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK',
+                              'https://img.vietqr.io/image/MB-0123456789-compact2.png?amount=$totalAmount&addInfo=${widget.studentId.isNotEmpty ? widget.studentId : "MSSV"}%20$uid&accountName=TRUONG%20DAI%20HOC%20EDUTRACK',
                               fit: BoxFit.contain,
                               loadingBuilder: (context, child, loadingProgress) {
                                 if (loadingProgress == null) return child;
@@ -4499,27 +4499,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           
                           try {
                             final bytes = await result.readAsBytes();
-                            final fileName = 'proof_${DateTime.now().millisecondsSinceEpoch}_${result.name}';
                             final base64String = base64Encode(bytes);
-                            
-                            final response = await http.post(
-                              Uri.parse('https://setcors-pvqsiluuja-uc.a.run.app'),
-                              headers: {'Content-Type': 'application/json'},
-                              body: jsonEncode({
-                                'base64Data': base64String,
-                                'mimeType': result.mimeType ?? 'image/jpeg',
-                                'fileName': fileName,
-                              }),
-                            ).timeout(const Duration(seconds: 25), onTimeout: () {
-                              throw Exception('Upload timeout. Vui lòng kiểm tra lại mạng hoặc thử lại.');
-                            });
-                            
-                            if (response.statusCode != 200) {
-                              throw Exception('Lỗi server: ${response.body}');
-                            }
-                            
-                            final responseData = jsonDecode(response.body);
-                            final downloadUrl = responseData['url'];
+                            final mimeType = result.mimeType ?? 'image/jpeg';
+                            final dataUrl = 'data:$mimeType;base64,$base64String';
                             
                             await FirebaseFirestore.instance.collection('tuition_fees').doc(docId).set({
                               'studentId': uid,
@@ -4528,7 +4510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               'courses': _tuitionCourses,
                               'totalAmount': totalAmount,
                               'status': 'pending_verification',
-                              'proofUrl': downloadUrl,
+                              'proofUrl': dataUrl,
                               'paymentMethod': 'qr_transfer',
                               'paymentDate': FieldValue.serverTimestamp(),
                             }, SetOptions(merge: true));
