@@ -489,18 +489,25 @@ class _RegisterScreenState extends State<RegisterScreen>
         'email': _emailCtrl.text.trim(),
         'studentId': _idCtrl.text.trim(),
         'role': roleStr,
+        'status': 'pending',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      await FirebaseAuth.instance.signOut();
+
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Đăng ký thành công! Đang chờ Admin phê duyệt.'),
+        backgroundColor: Colors.green,
+      ));
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            role: _selectedRole ?? UserRole.student,
-            email: _emailCtrl.text.trim(),
-            studentId: _idCtrl.text.trim(),
-            fullName: _nameCtrl.text.trim(),
+          builder: (_) => LoginScreen(
+            registeredEmail: _emailCtrl.text.trim(),
+            registeredId: _idCtrl.text.trim(),
+            registeredRole: _selectedRole,
           ),
         ),
       );

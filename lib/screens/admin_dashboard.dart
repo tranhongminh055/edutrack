@@ -3,14 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:csv/csv.dart';
+import 'package:web/web.dart' as web;
 import '../theme/app_colors.dart';
 import '../widgets/nature_background.dart';
 import '../widgets/glass_container.dart';
+import '../widgets/live_clock.dart';
 import '../services/notification_service.dart';
 import '../services/course_registration_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/schedule_grid.dart';
+import '../widgets/role_selector.dart';
+import '../widgets/mail_client_view.dart';
+import '../widgets/forum_board_view.dart';
 import 'welcome_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -28,6 +34,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _contentCtrl = TextEditingController();
   bool _showSuccess = false;
+
+  bool _isEditingInfo = false;
+  bool _isVerified = false;
+  String? _systemNote;
+  String? _avatarBase64;
+  final _formKey = GlobalKey<FormState>();
+  final ImagePicker _picker = ImagePicker();
+
+  final TextEditingController _fullNameController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
+  final TextEditingController _dobController = TextEditingController();
+  final TextEditingController _genderController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _facultyController = TextEditingController();
+  final TextEditingController _majorController = TextEditingController();
 
   // Search/Filter states
   String _adminRegYear = '2025-2026';
@@ -48,11 +70,28 @@ class _AdminDashboardState extends State<AdminDashboard> {
   String _calcYear = '2025-2026';
   String _calcSemester = 'Học kỳ 1';
   bool _calculating = false;
+  String _filterMajor = 'Tất cả';
   String _tuitionSearchQuery = '';
   final TextEditingController _tuitionSearchCtrl = TextEditingController();
+  Stream<QuerySnapshot>? _tuitionStream;
+
+  void _updateTuitionStream() {
+    _tuitionStream = FirebaseFirestore.instance
+        .collection('tuition_fees')
+        .where('academicYear', isEqualTo: _calcYear)
+        .where('semester', isEqualTo: _calcSemester)
+        .snapshots();
+  }
+
+  // Cached streams to prevent continuous loading flicker
+  late final Stream<QuerySnapshot> _usersStream;
+  late final Stream<QuerySnapshot> _advisorRequestsStream;
+  late final Stream<QuerySnapshot> _schedulesStream;
+  late final Stream<QuerySnapshot> _evalFormsStream;
+
 
   final List<Map<String, dynamic>> _menus = [
-    {'icon': Icons.dashboard, 'label': 'Tổng quan'},
+    {'icon': Icons.person, 'label': 'Thông tin Cá nhân'},
     {'icon': Icons.campaign, 'label': 'Gửi Thông báo'},
     {'icon': Icons.history, 'label': 'Thông báo đã gửi'},
     {'icon': Icons.calendar_today, 'label': 'Quản lý lịch học'},
@@ -66,10 +105,98 @@ class _AdminDashboardState extends State<AdminDashboard> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _usersStream = FirebaseFirestore.instance.collection('users').snapshots();
+    _advisorRequestsStream = FirebaseFirestore.instance.collection('advisor_change_requests').snapshots();
+    _schedulesStream = FirebaseFirestore.instance.collection('schedules').snapshots();
+    _evalFormsStream = FirebaseFirestore.instance.collection('evaluation_forms').orderBy('createdAt', descending: true).snapshots();
+    _updateTuitionStream();
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _fullNameController.text = data['fullName'] ?? '';
+          _idController.text = data['idNumber'] ?? '';
+          _dobController.text = data['dob'] ?? '';
+          _genderController.text = data['gender'] ?? '';
+          _emailController.text = data['email'] ?? widget.email;
+          _phoneController.text = data['phone'] ?? '';
+          _facultyController.text = data['faculty'] ?? '';
+          _majorController.text = data['major'] ?? '';
+          _avatarBase64 = data['avatarBase64'];
+          _isVerified = data['isVerified'] ?? false;
+          _systemNote = data['systemNote'];
+        });
+      }
+    }
+  }
+
+  Future<void> _saveProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    final updates = {
+      'fullName': _fullNameController.text.trim(),
+      'idNumber': _idController.text.trim(),
+      'dob': _dobController.text.trim(),
+      'gender': _genderController.text.trim(),
+      'email': _emailController.text.trim(),
+      'phone': _phoneController.text.trim(),
+      'faculty': _facultyController.text.trim(),
+      'major': _majorController.text.trim(),
+      if (_avatarBase64 != null) 'avatarBase64': _avatarBase64,
+    };
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(updates, SetOptions(merge: true));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cập nhật thông tin thành công')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 70,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _avatarBase64 = base64Encode(bytes);
+        });
+        if (!_isEditingInfo) {
+          _saveProfile();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _titleCtrl.dispose();
     _contentCtrl.dispose();
     _tuitionSearchCtrl.dispose();
+    _fullNameController.dispose();
+    _idController.dispose();
+    _dobController.dispose();
+    _genderController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _facultyController.dispose();
+    _majorController.dispose();
     for (var ctrl in _creditControllers.values) {
       ctrl.dispose();
     }
@@ -90,6 +217,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           child: Column(
             children: [
               _buildTopNav(),
+              _buildBanner(),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -102,6 +230,56 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildBanner() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: GlassContainer(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left: Logo text
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('my', style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 24, fontStyle: FontStyle.italic)),
+                const Text('EDUTRACK', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold, letterSpacing: 2)),
+              ],
+            ),
+            
+            // Center: Clock
+            const LiveClock(),
+            
+            // Right: Quick Links
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildQuickLink(Icons.mail, 'EduTrack Gmail', onTap: () => setState(() => _menuIndex = 998)),
+                const SizedBox(height: 8),
+                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN', onTap: _showAdminELearningLogin),
+                const SizedBox(height: 8),
+                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK', onTap: () => setState(() => _menuIndex = 997)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickLink(IconData icon, String text, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.adminColor, size: 16),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }
@@ -121,7 +299,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
             decoration: BoxDecoration(color: AppColors.adminColor.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
             child: const Text('Quản trị viên', style: TextStyle(color: AppColors.adminColor, fontSize: 11, fontWeight: FontWeight.bold)),
           ),
+          const SizedBox(width: 32),
+          _buildTopNavLink(Icons.home, 'Trang chủ', onTap: () => setState(() => _menuIndex = 0)),
+          _buildTopNavLink(Icons.mail, 'Mail', onTap: () => setState(() => _menuIndex = 998)),
+          _buildTopNavLink(Icons.check_circle, 'E-Learning', onTap: _showAdminELearningLogin),
+          _buildTopNavLink(Icons.forum, 'Forum', onTap: () => setState(() => _menuIndex = 997)),
           const Spacer(),
+          const Text('Việt Nam  |  English', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          const SizedBox(width: 16),
           Text(widget.email, style: const TextStyle(color: Colors.white70, fontSize: 13)),
           const SizedBox(width: 16),
           GestureDetector(
@@ -142,6 +327,85 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 Text('Đăng xuất', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
               ]),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopNavLink(IconData icon, String label, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white70, size: 16),
+            const SizedBox(width: 4),
+            Text(label, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAdminELearningLogin() {
+    final emailCtrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: const Text('Đăng nhập hệ thống E-Learning', style: TextStyle(color: Colors.white)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Nhập Email của Giảng viên hoặc Sinh viên để truy cập không gian E-Learning của họ:', style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                labelText: 'Email Giảng viên / Sinh viên',
+                labelStyle: const TextStyle(color: Colors.white54),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.3))),
+                focusedBorder: const OutlineInputBorder(borderSide: BorderSide(color: AppColors.adminColor)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailCtrl.text.trim();
+              if (email.isEmpty) return;
+              
+              final snapshot = await FirebaseFirestore.instance.collection('users').where('email', isEqualTo: email).get();
+              
+              if (snapshot.docs.isEmpty && mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Không tìm thấy tài khoản với email này.'), backgroundColor: Colors.red));
+                return;
+              }
+              
+              final userDoc = snapshot.docs.first;
+              final uid = userDoc.id;
+              final role = userDoc.data()['role'] as String? ?? 'student';
+              
+              if (role == 'admin' && mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Không thể dùng tài khoản admin để vào e-learning.'), backgroundColor: Colors.red));
+                return;
+              }
+              
+              if (mounted) Navigator.pop(ctx);
+              
+              web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=$role&email=${Uri.encodeComponent(email)}', '_blank');
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.adminColor),
+            child: const Text('Truy cập', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -207,7 +471,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       margin: const EdgeInsets.only(left: 24, right: 24, top: 16, bottom: 24),
       child: GlassContainer(
         child: switch (_menuIndex) {
-          0 => _buildOverview(),
+          0 => _buildPersonalInfoContent(),
           1 => _buildSendNotification(),
           2 => _buildSentNotifications(),
           3 => _buildSchedule(),
@@ -218,54 +482,233 @@ class _AdminDashboardState extends State<AdminDashboard> {
           8 => _buildAdvisorChangeApproval(),
           9 => _buildEvaluationFormManager(),
           10 => _buildTuitionManager(),
+          997 => ForumBoardView(role: UserRole.admin, email: widget.email),
+          998 => MailClientView(role: UserRole.admin, email: widget.email),
           _ => const Center(child: Text('Chức năng đang phát triển', style: TextStyle(color: Colors.white))),
         },
       ),
     );
   }
 
-  // --- 0: Tổng quan ---
-  Widget _buildOverview() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Row(children: [
-              Icon(Icons.dashboard, color: AppColors.adminColor, size: 28),
-              SizedBox(width: 12),
-              Text('TỔNG QUAN', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
-            ]),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Row(children: [
-          Expanded(child: _statCard('Lớp đang dạy', '4', Icons.class_, Colors.blue)),
-          const SizedBox(width: 16),
-          Expanded(child: _statCard('Sinh viên', '156', Icons.people, AppColors.adminColor)),
-          const SizedBox(width: 16),
-          Expanded(child: _statCard('Thông báo đã gửi', '${_notiService.notifications.where((n) => !n.isFromLecturer).length}', Icons.campaign, Colors.orange)),
-        ]),
-        const SizedBox(height: 32),
-        const Text('Lịch trình hệ thống', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 16),
-        const Text('Dữ liệu lịch học đang được đồng bộ cho tất cả các tài khoản.', style: TextStyle(color: Colors.white70)),
-      ]),
+  Widget _gradeTableHeader(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13), textAlign: TextAlign.center),
     );
   }
 
-  Widget _statCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16)),
-      child: Column(children: [
-        Icon(icon, color: color, size: 32),
-        const SizedBox(height: 12),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
-      ]),
+  Widget _gradeTableCell(Widget child) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Center(child: child),
+    );
+  }
+
+  // --- 0: Tổng quan ---
+  Widget _buildPersonalInfoContent() {
+    return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.all(32),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.person, color: AppColors.adminColor, size: 28),
+                    SizedBox(width: 12),
+                    Text('THÔNG TIN CÁ NHÂN', style: TextStyle(color: AppColors.adminColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (_isEditingInfo) {
+                      if (_formKey.currentState!.validate()) {
+                        _saveProfile();
+                        setState(() {
+                          _isEditingInfo = false;
+                        });
+                      }
+                    } else {
+                      setState(() {
+                        _isEditingInfo = true;
+                      });
+                    }
+                  },
+                  icon: Icon(_isEditingInfo ? Icons.save : Icons.edit, size: 16),
+                  label: Text(_isEditingInfo ? 'Lưu thông tin' : 'Cập nhật thông tin'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.adminColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar section
+                Column(
+                  children: [
+                    Container(
+                      width: 120, height: 120,
+                      clipBehavior: Clip.hardEdge,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.adminColor.withValues(alpha: 0.2),
+                        border: Border.all(color: AppColors.adminColor, width: 2),
+                      ),
+                      child: _avatarBase64 != null
+                          ? Image.memory(base64Decode(_avatarBase64!), fit: BoxFit.cover)
+                          : Icon(Icons.person, size: 60, color: Colors.white.withValues(alpha: 0.8)),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.adminColor.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('Cập nhật ảnh', style: TextStyle(color: AppColors.adminColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 40),
+                // Info details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_isVerified) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(children: [
+                                Icon(Icons.verified, color: Colors.green, size: 18),
+                                SizedBox(width: 8),
+                                Text('Tài khoản đã được hệ thống xác thực', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13)),
+                              ]),
+                              if (_systemNote != null) ...[
+                                const SizedBox(height: 6),
+                                Text(_systemNote!, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontStyle: FontStyle.italic)),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số / ID', _idController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Ngày sinh', _dobController, 'Giới tính', _genderController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Email', _emailController, 'Số điện thoại', _phoneController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Phòng ban', _facultyController, 'Chức vụ', _majorController),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label1, dynamic val1, String label2, dynamic val2, {bool isFirstFixed = false, bool isSecondFixed = false}) {
+    return Row(
+      children: [
+        Expanded(child: _buildInfoField(label1, val1, isFixed: isFirstFixed)),
+        const SizedBox(width: 24),
+        Expanded(child: _buildInfoField(label2, val2, isFixed: isSecondFixed)),
+      ],
+    );
+  }
+
+  Widget _buildInfoField(String label, dynamic val, {bool isFixed = false}) {
+    bool isString = val is String;
+    TextEditingController? controller = isString ? null : val as TextEditingController;
+    
+    String displayText = isString ? val : controller!.text;
+    bool isEmpty = displayText.trim().isEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+        const SizedBox(height: 8),
+        if (!_isEditingInfo || isFixed)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              isEmpty ? 'Chưa cập nhật' : displayText,
+              style: TextStyle(
+                color: isEmpty ? Colors.grey.shade400 : Colors.black87,
+                fontSize: 14,
+                fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          )
+        else
+          TextFormField(
+            controller: controller,
+            style: const TextStyle(color: Colors.black87, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Nhập $label',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.adminColor),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -494,7 +937,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('schedules').snapshots(),
+            stream: _schedulesStream,
             builder: (context, snapshot) {
               // Only show loading spinner on very first load, not on stream updates
               if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
@@ -773,29 +1216,70 @@ class _AdminDashboardState extends State<AdminDashboard> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-                                ...students.map((doc) {
-                                  final d = doc.data() as Map<String, dynamic>;
-                                  final uid = d['userId'] ?? '';
-                                  final att = d['attendanceScore']?.toString() ?? '-';
-                                  final mid = d['midtermScore']?.toString() ?? '-';
-                                  final fin = d['finalScore']?.toString() ?? '-';
-                                  final tot = d['total10']?.toString() ?? '-';
-                                  final let = d['letterGrade'] ?? '-';
-                                  
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 8.0),
-                                    child: Row(
-                                      children: [
-                                        Expanded(flex: 2, child: Text(uid, style: const TextStyle(color: Colors.white))),
-                                        Expanded(child: Text('CC: $att', style: const TextStyle(color: Colors.white70))),
-                                        Expanded(child: Text('GK: $mid', style: const TextStyle(color: Colors.white70))),
-                                        Expanded(child: Text('CK: $fin', style: const TextStyle(color: Colors.white70))),
-                                        Expanded(child: Text('Tổng: $tot', style: TextStyle(color: isPublished ? Colors.greenAccent : Colors.white54, fontWeight: FontWeight.bold))),
-                                        Expanded(child: Text('Đ: $let', style: TextStyle(color: isPublished ? Colors.yellow : Colors.white54, fontWeight: FontWeight.bold))),
-                                      ],
-                                    ),
-                                  );
-                                }),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.02),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                                  ),
+                                  child: Table(
+                                    border: TableBorder.symmetric(inside: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+                                    columnWidths: const {
+                                      0: FlexColumnWidth(2), // MSSV
+                                      1: FlexColumnWidth(1.5), // CC
+                                      2: FlexColumnWidth(1.5), // GK
+                                      3: FlexColumnWidth(3), // Detailed
+                                      4: FlexColumnWidth(1.5), // CK
+                                      5: FlexColumnWidth(1.5), // Tổng
+                                      6: FlexColumnWidth(1.5), // Chữ
+                                    },
+                                    children: [
+                                      TableRow(
+                                        decoration: BoxDecoration(color: AppColors.adminColor.withValues(alpha: 0.2), borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8))),
+                                        children: [
+                                          _gradeTableHeader('MSSV'),
+                                          _gradeTableHeader('Chuyên cần\n(10%)'),
+                                          _gradeTableHeader('Giữa kỳ\n(20%)'),
+                                          _gradeTableHeader('Điểm Chi tiết\n(Bài tập/Kiểm tra)'),
+                                          _gradeTableHeader('Cuối kỳ\n(70%)'),
+                                          _gradeTableHeader('Tổng'),
+                                          _gradeTableHeader('Điểm chữ'),
+                                        ],
+                                      ),
+                                      ...students.map((doc) {
+                                        final d = doc.data() as Map<String, dynamic>;
+                                        final uid = d['userId'] ?? '';
+                                        final att = d['attendanceScore']?.toString() ?? '-';
+                                        final mid = d['midtermScore']?.toString() ?? '-';
+                                        final fin = d['finalScore']?.toString() ?? '-';
+                                        final tot = d['total10']?.toString() ?? '-';
+                                        final let = d['letterGrade'] ?? '-';
+                                        
+                                        final detailed = d['detailedGrades'] as List<dynamic>? ?? [];
+                                        String detailedStr = '-';
+                                        if (detailed.isNotEmpty) {
+                                          detailedStr = detailed.map((e) {
+                                            final map = e as Map<String, dynamic>;
+                                            return '${map['title']}: ${map['grade']}';
+                                          }).join('  |  ');
+                                        }
+
+                                        return TableRow(
+                                          decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
+                                          children: [
+                                            _gradeTableCell(Text(uid, style: const TextStyle(color: Colors.white))),
+                                            _gradeTableCell(Text(att, style: const TextStyle(color: Colors.white70))),
+                                            _gradeTableCell(Text(mid, style: const TextStyle(color: Colors.white70))),
+                                            _gradeTableCell(Text(detailedStr, style: const TextStyle(color: Colors.orangeAccent, fontSize: 12), textAlign: TextAlign.center)),
+                                            _gradeTableCell(Text(fin, style: const TextStyle(color: Colors.white70))),
+                                            _gradeTableCell(Text(tot, style: TextStyle(color: isPublished ? Colors.greenAccent : Colors.white54, fontWeight: FontWeight.bold))),
+                                            _gradeTableCell(Text(let, style: TextStyle(color: isPublished ? Colors.yellow : Colors.white54, fontWeight: FontWeight.bold))),
+                                          ],
+                                        );
+                                      }).toList(),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           )
@@ -814,10 +1298,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // --- 5: Quản lý Đăng nhập ---
   Widget _buildStudentMgmt() {
-    return FutureBuilder<QuerySnapshot>(
-      future: FirebaseFirestore.instance.collection('users').get(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: _usersStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
         }
 
@@ -834,8 +1318,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ...doc.data() as Map<String, dynamic>
         }).toList();
 
-        final students = allUsers.where((u) => u['role'] == 'student').toList();
-        final lecturers = allUsers.where((u) => u['role'] == 'lecturer').toList();
+        final pendingAdmins = allUsers.where((u) => u['status'] == 'pending' && u['role'] == 'admin').toList();
+        final pendingOthers = allUsers.where((u) => u['status'] == 'pending' && u['role'] != 'admin').toList();
+        final students = allUsers.where((u) => u['role'] == 'student' && u['status'] != 'pending').toList();
+        final lecturers = allUsers.where((u) => u['role'] == 'lecturer' && u['status'] != 'pending').toList();
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(32),
@@ -847,6 +1333,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ]),
             const SizedBox(height: 24),
 
+            // Pending Admins Table
+            if (pendingAdmins.isNotEmpty) ...[
+              _buildPendingAdminTable('Yêu cầu đổi Quản trị viên (Admin)', pendingAdmins, Icons.admin_panel_settings),
+              const SizedBox(height: 32),
+            ],
+
+            // Pending Users Table
+            if (pendingOthers.isNotEmpty) ...[
+              _buildPendingUserTable('Yêu cầu phê duyệt tài khoản', pendingOthers, Icons.how_to_reg),
+              const SizedBox(height: 32),
+            ],
+
             // Students Table
             _buildUserTable('Danh sách Sinh viên', students, Icons.school),
             const SizedBox(height: 32),
@@ -857,6 +1355,291 @@ class _AdminDashboardState extends State<AdminDashboard> {
         );
       },
     );
+  }
+
+  Widget _buildPendingAdminTable(String title, List<Map<String, dynamic>> users, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, color: Colors.redAccent, size: 24),
+          const SizedBox(width: 12),
+          Text(title, style: const TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text('${users.length}', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Expanded(flex: 2, child: Text('Họ tên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 2, child: Text('Email', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 1, child: Text('Vai trò', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 2, child: Text('Thao tác (Chuyển quyền)', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+              ),
+              ...users.map((user) => _buildPendingAdminRow(user)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPendingAdminRow(Map<String, dynamic> user) {
+    final fullName = user['fullName'] ?? 'N/A';
+    final email = user['email'] ?? 'N/A';
+    final userId = user['id'] as String;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+      ),
+      child: Row(
+        children: [
+          Expanded(flex: 2, child: Text(fullName, style: const TextStyle(color: Colors.white))),
+          Expanded(flex: 2, child: Text(email, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13))),
+          Expanded(flex: 1, child: Text('Admin', style: TextStyle(color: Colors.redAccent.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.bold))),
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _handleApproveAdminChange(userId),
+                  icon: const Icon(Icons.swap_horiz, size: 16),
+                  label: const Text('Chấp nhận đổi', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.redAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _handleRejectUser(userId),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('Từ chối', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade700,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleApproveAdminChange(String newAdminId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1a2a1f),
+        title: const Text('Xác nhận đổi Admin', style: TextStyle(color: Colors.white)),
+        content: const Text('Bạn có chắc muốn chuyển quyền Admin cho tài khoản này?\n\nHành động này sẽ thu hồi quyền Admin của bạn và bạn sẽ bị đăng xuất ngay lập tức.', 
+          style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy', style: TextStyle(color: Colors.white70)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Xác nhận chuyển quyền', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('users').where('role', isEqualTo: 'admin').get();
+      final batch = FirebaseFirestore.instance.batch();
+      
+      for (var doc in snapshot.docs) {
+        if (doc.id != newAdminId) {
+          batch.update(doc.reference, {'role': 'former_admin', 'status': 'revoked'});
+        }
+      }
+      
+      batch.update(FirebaseFirestore.instance.collection('users').doc(newAdminId), {'status': 'approved'});
+      await batch.commit();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã chuyển quyền Admin thành công. Bạn đang được đăng xuất...'), backgroundColor: Colors.green));
+        await Future.delayed(const Duration(seconds: 1));
+        await FirebaseAuth.instance.signOut();
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const WelcomeScreen()), (r) => false);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Widget _buildPendingUserTable(String title, List<Map<String, dynamic>> users, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, color: Colors.orange, size: 24),
+          const SizedBox(width: 12),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text('${users.length}', style: const TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.bold)),
+          ),
+        ]),
+        const SizedBox(height: 16),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.03),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Expanded(flex: 2, child: Text('Họ tên', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 2, child: Text('Email', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 1, child: Text('Vai trò', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                    Expanded(flex: 2, child: Text('Thao tác', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                  ],
+                ),
+              ),
+              ...users.map((user) => _buildPendingUserRow(user)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPendingUserRow(Map<String, dynamic> user) {
+    final fullName = user['fullName'] ?? 'N/A';
+    final email = user['email'] ?? 'N/A';
+    final role = user['role'] ?? 'N/A';
+    final userId = user['id'] as String;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+      ),
+      child: Row(
+        children: [
+          Expanded(flex: 2, child: Text(fullName, style: const TextStyle(color: Colors.white))),
+          Expanded(flex: 2, child: Text(email, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13))),
+          Expanded(flex: 1, child: Text(role == 'student' ? 'Sinh viên' : 'Giảng viên', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12))),
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _handleApproveUser(userId),
+                  icon: const Icon(Icons.check, size: 16),
+                  label: const Text('Duyệt', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  onPressed: () => _handleRejectUser(userId),
+                  icon: const Icon(Icons.close, size: 16),
+                  label: const Text('Từ chối', style: TextStyle(fontSize: 12)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    minimumSize: Size.zero,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleApproveUser(String userId) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({'status': 'approved'});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã duyệt tài khoản thành công!'), backgroundColor: Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  Future<void> _handleRejectUser(String userId) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(userId).delete();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã từ chối và xóa yêu cầu đăng ký.'), backgroundColor: Colors.orange));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   Widget _buildUserTable(String title, List<Map<String, dynamic>> users, IconData icon) {
@@ -907,6 +1690,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                           Expanded(flex: 2, child: Text('Email', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
                           Expanded(flex: 1, child: Text('Vai trò', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
                           Expanded(flex: 2, child: Text('Đăng nhập cuối', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 2, child: Text('Thao tác', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold))),
                         ],
                       ),
                     ),
@@ -923,10 +1707,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final fullName = user['fullName'] ?? 'N/A';
     final email = user['email'] ?? 'N/A';
     final role = user['role'] ?? 'N/A';
+    final status = user['status'] as String?;
+    final isLocked = status == 'locked';
     final userId = user['id'] as String?;
 
-    return FutureBuilder<DatabaseEvent>(
-      future: FirebaseDatabase.instance.ref('users/$userId/lastLogin').once(),
+    return StreamBuilder<DatabaseEvent>(
+      stream: FirebaseDatabase.instance.ref('users/$userId/lastLogin').onValue,
       builder: (context, snapshot) {
         String lastLoginText = 'Chưa đăng nhập';
         if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
@@ -948,23 +1734,59 @@ class _AdminDashboardState extends State<AdminDashboard> {
               Expanded(flex: 2, child: Text(email, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13))),
               Expanded(flex: 1, child: Text(role, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12))),
               Expanded(flex: 2, child: Text(lastLoginText, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12))),
-              if (role == 'student' && userId != null) ...[
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () => _showCancelCreditsDialog(userId, fullName),
-                  icon: const Icon(Icons.cancel, size: 16),
-                  label: const Text('Hủy tín chỉ', style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.withValues(alpha: 0.8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
+              Expanded(
+                flex: 2,
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (userId != null)
+                      ElevatedButton.icon(
+                        onPressed: () => _handleToggleLockUser(userId, status),
+                        icon: Icon(isLocked ? Icons.lock_open : Icons.lock, size: 16),
+                        label: Text(isLocked ? 'Mở khóa' : 'Khóa', style: const TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isLocked ? Colors.green : Colors.orange,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                      ),
+                    if (role == 'student' && userId != null)
+                      ElevatedButton.icon(
+                        onPressed: () => _showCancelCreditsDialog(userId, fullName),
+                        icon: const Icon(Icons.cancel, size: 16),
+                        label: const Text('Hủy tín chỉ', style: TextStyle(fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.withValues(alpha: 0.8),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          minimumSize: Size.zero,
+                        ),
+                      ),
+                  ],
                 ),
-              ],
+              ),
             ],
           ),
         );
       },
     );
+  }
+
+  Future<void> _handleToggleLockUser(String userId, String? currentStatus) async {
+    try {
+      final newStatus = currentStatus == 'locked' ? 'approved' : 'locked';
+      await FirebaseFirestore.instance.collection('users').doc(userId).update({'status': newStatus});
+      if (mounted) {
+        final msg = newStatus == 'locked' ? 'Đã khóa tài khoản.' : 'Đã mở khóa tài khoản.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: newStatus == 'locked' ? Colors.orange : Colors.green));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
+      }
+    }
   }
 
   Future<void> _showCancelCreditsDialog(String userId, String studentName) async {
@@ -1340,7 +2162,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   isExpanded: true,
                   dropdownColor: const Color(0xFF1a2a1f),
                   style: const TextStyle(color: Colors.white),
-                  items: ['Kỹ thuật phần mềm', 'Hệ thống thông tin', 'Khoa học máy tính', 'An toàn thông tin'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+                  items: ['Kỹ thuật phần mềm', 'Khoa học máy tính', 'Hệ thống thông tin', 'An toàn thông tin', 'Quản trị kinh doanh', 'Ngôn ngữ Anh', 'Marketing'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                   onChanged: (v) => setDialogState(() => _uploadMajor = v!),
                 )),
                 const SizedBox(height: 12),
@@ -1493,7 +2315,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           continue;
         }
 
-        await firestore.collection('available_courses').add({
+        final existingQuery = await firestore.collection('available_courses')
+            .where('courseId', isEqualTo: courseId)
+            .where('classGroup', isEqualTo: classGroup)
+            .where('semester', isEqualTo: _uploadSemester)
+            .where('academicYear', isEqualTo: _uploadYear)
+            .get();
+
+        final updateData = <String, dynamic>{
           'courseId': courseId,
           'courseName': courseName,
           'credits': credits,
@@ -1501,7 +2330,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
           'lecturerName': lecturerName,
           'lecturerEmail': lecturerEmail,
           'maxSlots': maxSlots,
-          'currentSlots': 0,
           'dayOfWeek': dayOfWeek,
           'startHour': startHour,
           'duration': duration,
@@ -1511,7 +2339,23 @@ class _AdminDashboardState extends State<AdminDashboard> {
           'major': _uploadMajor,
           'status': 'open',
           'registrationDeadline': _uploadDeadline != null ? Timestamp.fromDate(_uploadDeadline!) : null,
-        });
+        };
+
+        if (existingQuery.docs.isNotEmpty) {
+          // Update the first one found
+          await existingQuery.docs.first.reference.update(updateData);
+          
+          // If there are duplicates (caused by older buggy uploads), delete them automatically
+          if (existingQuery.docs.length > 1) {
+            for (int i = 1; i < existingQuery.docs.length; i++) {
+              await existingQuery.docs[i].reference.delete();
+            }
+          }
+        } else {
+          updateData['currentSlots'] = 0;
+          await firestore.collection('available_courses').add(updateData);
+        }
+        
         uploadedCount++;
       }
       
@@ -1536,12 +2380,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // --- 8: Phê duyệt đổi Cố vấn ---
   Widget _buildAdvisorChangeApproval() {
-    return FutureBuilder<QuerySnapshot>(
-      future: FirebaseFirestore.instance
-          .collection('advisor_change_requests')
-          .get(),
+    return StreamBuilder<QuerySnapshot>(
+      stream: _advisorRequestsStream,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
         }
 
@@ -1808,7 +2650,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         const SizedBox(height: 16),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('evaluation_forms').orderBy('createdAt', descending: true).snapshots(),
+            stream: _evalFormsStream,
             builder: (context, snapshot) {
               if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
@@ -2225,8 +3067,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   // ====== TUITION MANAGEMENT METHODS ======
   Future<void> _loadRates() async {
-    if (_ratesLoaded) return;
-    final snapshot = await FirebaseFirestore.instance.collection('tuition_rates').get();
+    final snapshot = await FirebaseFirestore.instance
+        .collection('tuition_rates')
+        .where('academicYear', isEqualTo: _calcYear)
+        .where('semester', isEqualTo: _calcSemester)
+        .get();
     final majors = ['Kỹ thuật phần mềm', 'Hệ thống thông tin', 'Khoa học máy tính', 'An toàn thông tin', 'Mặc định'];
     
     final defaultRates = {
@@ -2242,7 +3087,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
       int coVal = defaultRates[major]?['course'] ?? 150000;
       int bVal = defaultRates[major]?['base'] ?? 1000000;
 
-      final match = snapshot.docs.where((d) => d.id == major).toList();
+      final match = snapshot.docs.where((d) => (d.data())['major'] == major).toList();
       if (match.isNotEmpty) {
         final data = match.first.data();
         cVal = data['creditRate'] ?? cVal;
@@ -2268,9 +3113,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
     try {
       final batch = FirebaseFirestore.instance.batch();
       for (var major in _creditControllers.keys) {
-        final cRef = FirebaseFirestore.instance.collection('tuition_rates').doc(major);
+        final docId = '${major}_${_calcYear}_${_calcSemester}'.replaceAll(' ', '_');
+        final cRef = FirebaseFirestore.instance.collection('tuition_rates').doc(docId);
         batch.set(cRef, {
           'major': major,
+          'academicYear': _calcYear,
+          'semester': _calcSemester,
           'creditRate': int.tryParse(_creditControllers[major]!.text.trim()) ?? 0,
           'courseRate': int.tryParse(_courseControllers[major]!.text.trim()) ?? 0,
           'baseFee': int.tryParse(_baseControllers[major]!.text.trim()) ?? 0,
@@ -2304,11 +3152,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     try {
-      final ratesSnapshot = await FirebaseFirestore.instance.collection('tuition_rates').get();
+      final ratesSnapshot = await FirebaseFirestore.instance
+          .collection('tuition_rates')
+          .where('academicYear', isEqualTo: _calcYear)
+          .where('semester', isEqualTo: _calcSemester)
+          .get();
       final rates = <String, Map<String, int>>{};
       for (var doc in ratesSnapshot.docs) {
         final data = doc.data();
-        rates[doc.id] = {
+        rates[data['major'] ?? ''] = {
           'creditRate': data['creditRate'] ?? 450000,
           'courseRate': data['courseRate'] ?? 150000,
           'baseFee': data['baseFee'] ?? 1000000,
@@ -2329,13 +3181,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
       final regsSnapshot = await FirebaseFirestore.instance
           .collection('registrations')
-          .where('academicYear', isEqualTo: _calcYear)
-          .where('semester', isEqualTo: _calcSemester)
           .get();
 
       final regsByUser = <String, List<QueryDocumentSnapshot>>{};
       for (var doc in regsSnapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
+        
+        // Hỗ trợ dữ liệu cũ: Nếu không có trường academicYear/semester thì ngầm hiểu là thuộc kỳ hiện tại
+        final rYear = data['academicYear'];
+        final rSem = data['semester'];
+        if (rYear != null && rYear != _calcYear) continue;
+        if (rSem != null && rSem != _calcSemester) continue;
+
         final uid = data['userId'] ?? '';
         if (uid.isNotEmpty) {
           if (!regsByUser.containsKey(uid)) regsByUser[uid] = [];
@@ -2366,9 +3223,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
         final studentMajor = userData['major'] ?? 'Mặc định';
 
         final userRegs = regsByUser[uid] ?? [];
-        if (userRegs.isEmpty) {
-          continue;
-        }
 
         int totalCredits = 0;
         final coursesList = <Map<String, dynamic>>[];
@@ -2413,7 +3267,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           'totalAmount': totalTuition,
           'status': currentStatus,
           'updatedAt': FieldValue.serverTimestamp(),
-        });
+        }, SetOptions(merge: true));
         successCount++;
       }
 
@@ -2440,7 +3294,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildTuitionManager() {
-    _loadRates();
+    if (!_ratesLoaded) {
+      _loadRates();
+    }
     
     return Column(
       children: [
@@ -2474,6 +3330,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   children: [
                     _tabButton(0, 'Định mức & Đơn giá', Icons.settings),
                     _tabButton(1, 'Hóa đơn học phí', Icons.receipt_long),
+                    _tabButton(2, 'Trạng thái thanh toán', Icons.fact_check),
                   ],
                 ),
               ),
@@ -2486,7 +3343,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ? const Center(child: CircularProgressIndicator(color: AppColors.adminColor))
               : _tuitionTab == 0
                   ? _buildRatesTab()
-                  : _buildBillingTab(),
+                  : _tuitionTab == 1 ? _buildBillingTab(showPaidOnly: false) : _buildBillingTab(showPaidOnly: true),
         ),
       ],
     );
@@ -2520,6 +3377,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       child: Column(
         children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.02),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _filterDropdown('Năm học', _calcYear, ['2024-2025', '2025-2026', '2026-2027'], (v) {
+                    setState(() { _calcYear = v!; _ratesLoaded = false; });
+                  }),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _filterDropdown('Học kỳ', _calcSemester, ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'], (v) {
+                    setState(() { _calcSemester = v!; _ratesLoaded = false; });
+                  }),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
           _buildRateCard('Kỹ thuật phần mềm', Icons.computer, Colors.blue),
           const SizedBox(height: 16),
           _buildRateCard('Hệ thống thông tin', Icons.dns, Colors.green),
@@ -2631,7 +3512,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildBillingTab() {
+  String _removeDiacritics(String str) {
+    var withDia = 'áàảãạăắằẳẵặâấầẩẫậéèẻẽẹêếềểễệíìỉĩịóòỏõọôốồổỗộơớờởỡợúùủũụưứừửữựýỳỷỹỵđÁÀẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÉÈẺẼẸÊẾỀỂỄỆÍÌỈĨỊÓÒỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÚÙỦŨỤƯỨỪỬỮỰÝỲỶỸỴĐ';
+    var withoutDia = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyydAAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD';
+    for (int i = 0; i < withDia.length; i++) {
+      str = str.replaceAll(withDia[i], withoutDia[i]);
+    }
+    return str.toLowerCase();
+  }
+
+  Widget _buildBillingTab({required bool showPaidOnly}) {
     return Column(
       children: [
         Padding(
@@ -2649,13 +3539,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   children: [
                     Expanded(
                       child: _filterDropdown('Năm học', _calcYear, ['2024-2025', '2025-2026', '2026-2027'], (v) {
-                        setState(() { _calcYear = v!; });
+                        setState(() { _calcYear = v!; _ratesLoaded = false; _updateTuitionStream(); });
                       }),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _filterDropdown('Học kỳ', _calcSemester, ['Học kỳ 1', 'Học kỳ 2', 'Học kỳ Hè'], (v) {
-                        setState(() { _calcSemester = v!; });
+                        setState(() { _calcSemester = v!; _ratesLoaded = false; _updateTuitionStream(); });
+                      }),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _filterDropdown('Ngành', _filterMajor, ['Tất cả', 'Kỹ thuật phần mềm', 'Hệ thống thông tin', 'Khoa học máy tính', 'An toàn thông tin', 'Mặc định'], (v) {
+                        setState(() { _filterMajor = v!; });
                       }),
                     ),
                     const SizedBox(width: 16),
@@ -2680,7 +3576,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   style: const TextStyle(color: Colors.white, fontSize: 13),
                   onChanged: (val) {
                     setState(() {
-                      _tuitionSearchQuery = val.trim().toLowerCase();
+                      _tuitionSearchQuery = _removeDiacritics(val.trim());
                     });
                   },
                   decoration: InputDecoration(
@@ -2711,11 +3607,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('tuition_fees')
-                .where('academicYear', isEqualTo: _calcYear)
-                .where('semester', isEqualTo: _calcSemester)
-                .snapshots(),
+            stream: _tuitionStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator(color: AppColors.adminColor));
@@ -2723,10 +3615,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
               
               var docs = snapshot.data?.docs ?? [];
               
+              // Filter by major
+              if (_filterMajor != 'Tất cả') {
+                docs = docs.where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  return (data['major'] ?? 'Mặc định') == _filterMajor;
+                }).toList();
+              }
+              
+              // Filter by status (Paid only OR Unpaid/Pending)
+              docs = docs.where((doc) {
+                final data = doc.data() as Map<String, dynamic>;
+                final status = data['status'] ?? 'unpaid';
+                if (showPaidOnly) {
+                  return status == 'paid';
+                } else {
+                  return status != 'paid';
+                }
+              }).toList();
+              
               if (_tuitionSearchQuery.isNotEmpty) {
                 docs = docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
-                  final name = (data['studentName'] ?? '').toString().toLowerCase();
+                  final name = _removeDiacritics((data['studentName'] ?? '').toString());
                   final cardId = (data['studentCardId'] ?? '').toString().toLowerCase();
                   return name.contains(_tuitionSearchQuery) || cardId.contains(_tuitionSearchQuery);
                 }).toList();
@@ -2761,167 +3672,160 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
-  Widget _buildBillingItem(QueryDocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
+  Widget _tableHeader(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87, fontSize: 13), textAlign: TextAlign.center),
+    );
+  }
+
+  Widget _tableCell(String text, {Alignment align = Alignment.centerLeft, Color? textColor, FontWeight? fontWeight}) {
+    return Container(
+      alignment: align,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Text(text, style: TextStyle(color: textColor ?? Colors.black87, fontSize: 13, fontWeight: fontWeight)),
+    );
+  }
+
+  void _showInvoiceDialog(BuildContext context, Map<String, dynamic> data) {
+    final coursesList = (data['courses'] as List<dynamic>?) ?? [];
+    final isPaid = data['status'] == 'paid';
+    final totalTuition = data['totalAmount'] ?? 0;
     final name = data['studentName'] ?? 'N/A';
     final cardId = data['studentCardId'] ?? 'N/A';
     final major = data['major'] ?? 'Mặc định';
-    final credits = data['creditsCount'] ?? 0;
-    final courses = data['coursesCount'] ?? 0;
-    final total = data['totalAmount'] ?? 0;
-    final status = data['status'] ?? 'unpaid';
-    final coursesList = (data['courses'] as List<dynamic>?) ?? [];
-    final isPaid = status == 'paid';
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          iconColor: Colors.white70,
-          collapsedIconColor: Colors.white30,
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isPaid ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              isPaid ? Icons.check_circle_outline : Icons.pending_outlined,
-              color: isPaid ? Colors.green : Colors.red,
-              size: 20,
-            ),
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('CHI TIẾT HÓA ĐƠN HỌC PHÍ', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 18)),
+            IconButton(icon: const Icon(Icons.close, color: Colors.black54), onPressed: () => Navigator.pop(ctx)),
+          ],
+        ),
+        content: SizedBox(
+          width: 800,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Sinh viên: $name - $cardId', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text('Ngành: $major', style: const TextStyle(color: Colors.black87, fontSize: 14)),
+                const SizedBox(height: 16),
+                Table(
+                  border: TableBorder.all(color: Colors.grey.shade400, width: 1, borderRadius: BorderRadius.circular(2)),
+                  columnWidths: const {
+                    0: FlexColumnWidth(1),
+                    1: FlexColumnWidth(2),
+                    2: FlexColumnWidth(4.5),
+                    3: FlexColumnWidth(1.5),
+                    4: FlexColumnWidth(2.5),
+                    5: FlexColumnWidth(2.5),
+                  },
                   children: [
-                    Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                    const SizedBox(height: 4),
-                    Row(
+                    TableRow(
+                      decoration: const BoxDecoration(color: Color(0xFFF5F5F5)),
                       children: [
-                        Text(cardId, style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.adminColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(major, style: const TextStyle(color: AppColors.adminColor, fontSize: 9, fontWeight: FontWeight.bold)),
-                        ),
+                        _tableHeader('STT'),
+                        _tableHeader('Mã môn'),
+                        _tableHeader('Tên môn học / Học phần'),
+                        _tableHeader('Tín chỉ'),
+                        _tableHeader('Học phí'),
+                        _tableHeader('Trạng thái'),
                       ],
                     ),
+                    ...List.generate(coursesList.length, (idx) {
+                      final course = coursesList[idx] as Map<String, dynamic>;
+                      return TableRow(
+                        children: [
+                          _tableCell((idx + 1).toString(), align: Alignment.center),
+                          _tableCell(course['courseId'] ?? 'N/A', align: Alignment.center),
+                          _tableCell(course['courseName'] ?? 'N/A'),
+                          _tableCell(course['credits']?.toString() ?? '0', align: Alignment.center),
+                          _tableCell(_formatCurrency(course['tuition'] ?? 0), align: Alignment.centerRight),
+                          _tableCell(isPaid ? 'Đã nộp' : 'Chưa nộp', 
+                            align: Alignment.center,
+                            textColor: isPaid ? Colors.green : Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ],
+                      );
+                    }),
+                    TableRow(
+                      children: [
+                        _tableCell(''),
+                        _tableCell(''),
+                        _tableCell('Phụ phí kỳ học (Base Fee)', fontWeight: FontWeight.bold),
+                        _tableCell(''),
+                        _tableCell(_formatCurrency(data['baseFee'] ?? 0), align: Alignment.centerRight, fontWeight: FontWeight.bold),
+                        _tableCell(''),
+                      ]
+                    )
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text('${_formatCurrency(total)} đ', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text('$credits TC | $courses môn', style: const TextStyle(color: Colors.white30, fontSize: 11)),
-                ],
-              ),
-            ],
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('TỔNG CỘNG: ${_formatCurrency(totalTuition)} VND', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+                  ],
+                ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showProofDialog(BuildContext context, String proofUrl) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Stack(
+          alignment: Alignment.center,
           children: [
             Container(
-              color: Colors.black12,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+              ),
               padding: const EdgeInsets.all(16),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('CHI TIẾT MÔN ĐĂNG KÝ:', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold, fontSize: 11)),
-                  const SizedBox(height: 8),
-                  ...coursesList.map((c) {
-                    final cData = c as Map<String, dynamic>;
-                    final cId = cData['courseId'] ?? 'N/A';
-                    final cName = cData['courseName'] ?? 'N/A';
-                    final cCredits = cData['credits'] ?? 3;
-                    final cTuition = cData['tuition'] ?? 0;
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '$cId - $cName ($cCredits TC)',
-                              style: const TextStyle(color: Colors.white70, fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text('${_formatCurrency(cTuition)} đ', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                        ],
-                      ),
-                    );
-                  }),
-                  const Divider(color: Colors.white12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Phụ phí kỳ học (Base Fee):', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                      Text('${_formatCurrency(data['baseFee'] ?? 0)} đ', style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                    ],
+                  const Text('Minh Chứng Thanh Toán', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black)),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      proofUrl,
+                      fit: BoxFit.contain,
+                      height: 400,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const SizedBox(
+                          height: 400,
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const SizedBox(
+                          height: 400,
+                          child: Center(child: Text('Không thể tải ảnh', style: TextStyle(color: Colors.red))),
+                        );
+                      },
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          await doc.reference.update({
-                            'status': isPaid ? 'unpaid' : 'paid',
-                            'paymentMethod': isPaid ? null : 'admin_manual',
-                            'paymentDate': isPaid ? null : FieldValue.serverTimestamp(),
-                          });
-                        },
-                        icon: Icon(isPaid ? Icons.undo : Icons.check, size: 14),
-                        label: Text(isPaid ? 'Đánh dấu Chưa nộp' : 'Đánh dấu Đã nộp', style: const TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isPaid ? Colors.orange.withValues(alpha: 0.8) : Colors.green.withValues(alpha: 0.8),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          elevation: 0,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          final confirm = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              backgroundColor: const Color(0xFF1a2a1f),
-                              title: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
-                              content: Text('Xóa hóa đơn học phí của $name?', style: const TextStyle(color: Colors.white70)),
-                              actions: [
-                                TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.white54))),
-                                ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('Xóa', style: TextStyle(color: Colors.white))),
-                              ],
-                            ),
-                          );
-                          if (confirm == true) {
-                            await doc.reference.delete();
-                          }
-                        },
-                        icon: const Icon(Icons.delete_outline, size: 14),
-                        label: const Text('Xóa', style: TextStyle(fontSize: 11)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.withValues(alpha: 0.8),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          elevation: 0,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.adminColor),
+                    child: const Text('Đóng', style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
@@ -2929,6 +3833,243 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildBillingItem(QueryDocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final studentId = data['studentId'] ?? '';
+    final origName = data['studentName'] ?? 'N/A';
+    final origCardId = data['studentCardId'] ?? 'N/A';
+    final origMajor = data['major'] ?? 'Mặc định';
+    int origCredits = data['creditsCount'] ?? 0;
+    int origCourses = data['coursesCount'] ?? 0;
+    final total = data['totalAmount'] ?? 0;
+    final status = data['status'] ?? 'unpaid';
+    final coursesList = (data['courses'] as List<dynamic>?) ?? [];
+    final proofUrl = data['proofUrl'] as String?;
+    final isPaid = status == 'paid';
+    final isPending = status == 'pending_verification';
+    
+    if (origCredits == 0 && origCourses == 0 && coursesList.isNotEmpty) {
+      origCourses = coursesList.length;
+      origCredits = coursesList.fold(0, (sum, item) => sum + ((item as Map<String, dynamic>)['credits'] as int? ?? 0));
+    }
+    
+    Widget buildUI(String name, String cardId, String major, int credits, int courses) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            iconColor: Colors.white70,
+            collapsedIconColor: Colors.white30,
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: isPaid 
+                    ? Colors.green.withValues(alpha: 0.15) 
+                    : (isPending ? Colors.orange.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15)),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isPaid 
+                    ? Icons.check_circle_outline 
+                    : (isPending ? Icons.image_search : Icons.pending_outlined),
+                color: isPaid 
+                    ? Colors.green 
+                    : (isPending ? Colors.orange : Colors.red),
+                size: 20,
+              ),
+            ),
+            title: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(cardId, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: AppColors.adminColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(major, style: const TextStyle(color: AppColors.adminColor, fontSize: 9, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text('${_formatCurrency(total)} đ', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 4),
+                    Text('$credits TC | $courses môn', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                  ],
+                ),
+              ],
+            ),
+            children: [
+              Container(
+                color: Colors.black12,
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('CHI TIẾT MÔN ĐĂNG KÝ:', style: TextStyle(color: Colors.white60, fontWeight: FontWeight.bold, fontSize: 11)),
+                    const SizedBox(height: 8),
+                    ...coursesList.map((c) {
+                      final cData = c as Map<String, dynamic>;
+                      final cId = cData['courseId'] ?? 'N/A';
+                      final cName = cData['courseName'] ?? 'N/A';
+                      final cCredits = cData['credits'] ?? 3;
+                      final cTuition = cData['tuition'] ?? 0;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$cId - $cName ($cCredits TC)',
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text('${_formatCurrency(cTuition)} đ', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                          ],
+                        ),
+                      );
+                    }),
+                    const Divider(color: Colors.white12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Phụ phí kỳ học (Base Fee):', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                        Text('${_formatCurrency(data['baseFee'] ?? 0)} đ', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (proofUrl != null)
+                          ElevatedButton.icon(
+                            onPressed: () => _showProofDialog(context, proofUrl),
+                            icon: const Icon(Icons.image_outlined, size: 14),
+                            label: const Text('Xem Minh chứng', style: TextStyle(fontSize: 11)),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.purple.withValues(alpha: 0.8),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              elevation: 0,
+                            ),
+                          ),
+                        if (proofUrl != null) const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            // Update data map before showing invoice dialog
+                            final updatedData = Map<String, dynamic>.from(data)
+                              ..['studentName'] = name
+                              ..['studentCardId'] = cardId
+                              ..['major'] = major;
+                            _showInvoiceDialog(context, updatedData);
+                          },
+                          icon: const Icon(Icons.receipt_long, size: 14),
+                          label: const Text('Xem Hóa Đơn', style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue.withValues(alpha: 0.8),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            elevation: 0,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            await doc.reference.update({
+                              'status': isPaid ? 'unpaid' : 'paid',
+                              'paymentMethod': isPaid ? null : 'admin_manual',
+                              'paymentDate': isPaid ? null : FieldValue.serverTimestamp(),
+                            });
+                          },
+                          icon: Icon(isPaid ? Icons.undo : Icons.check, size: 14),
+                          label: Text(isPaid ? 'Đánh dấu Chưa nộp' : 'Đánh dấu Đã nộp', style: const TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: isPaid ? Colors.orange.withValues(alpha: 0.8) : Colors.green.withValues(alpha: 0.8),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            elevation: 0,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                backgroundColor: const Color(0xFF1a2a1f),
+                                title: const Text('Xác nhận', style: TextStyle(color: Colors.white)),
+                                content: Text('Xóa hóa đơn học phí của $name?', style: const TextStyle(color: Colors.white70)),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy', style: TextStyle(color: Colors.white54))),
+                                  ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: Colors.red), child: const Text('Xóa', style: TextStyle(color: Colors.white))),
+                                ],
+                              ),
+                            );
+                            if (confirm == true) {
+                              await doc.reference.delete();
+                            }
+                          },
+                          icon: const Icon(Icons.delete_outline, size: 14),
+                          label: const Text('Xóa', style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.withValues(alpha: 0.8),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            elevation: 0,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    if (origName != 'N/A' && origCardId != 'N/A') {
+      return buildUI(origName, origCardId, origMajor, origCredits, origCourses);
+    }
+    
+    return FutureBuilder<DocumentSnapshot>(
+      future: FirebaseFirestore.instance.collection('users').doc(studentId).get(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || !snapshot.data!.exists) {
+          return buildUI(origName, origCardId, origMajor, origCredits, origCourses);
+        }
+        final userData = snapshot.data!.data() as Map<String, dynamic>? ?? {};
+        final fName = userData['fullName'] ?? origName;
+        final fCardId = userData['studentId'] ?? origCardId;
+        final fMajor = userData['major'] ?? origMajor;
+        return buildUI(fName, fCardId, fMajor, origCredits, origCourses);
+      },
     );
   }
 

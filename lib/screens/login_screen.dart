@@ -125,6 +125,19 @@ class _LoginScreenState extends State<LoginScreen>
         throw Exception('Vai trò không khớp. Bạn không phải là $roleName.');
       }
 
+      // 4. Kiểm tra trạng thái phê duyệt
+      final status = userData['status'] as String?;
+      if (status == 'pending') {
+        await FirebaseAuth.instance.signOut();
+        throw Exception('Tài khoản của bạn đang chờ phê duyệt từ Admin.');
+      } else if (status == 'rejected') {
+        await FirebaseAuth.instance.signOut();
+        throw Exception('Tài khoản của bạn đã bị từ chối phê duyệt.');
+      } else if (status == 'locked') {
+        await FirebaseAuth.instance.signOut();
+        throw Exception('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.');
+      }
+
       setState(() => _isLoading = false);
 
       if (mounted) {
@@ -456,11 +469,119 @@ class _LoginScreenState extends State<LoginScreen>
       ),
       const Spacer(),
       GestureDetector(
-        onTap: () {},
+        onTap: _showForgotPasswordDialog,
         child: const Text('Quên mật khẩu?',
           style: TextStyle(color: AppColors.primaryBlue, fontSize: 13, fontWeight: FontWeight.w600)),
       ),
     ]);
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final TextEditingController emailOrIdCtrl = TextEditingController();
+    bool isResetting = false;
+    
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text('Quên mật khẩu', style: TextStyle(color: AppColors.primaryBlue, fontWeight: FontWeight.bold)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Vui lòng nhập email hoặc mã số để nhận liên kết đặt lại mật khẩu.', style: TextStyle(fontSize: 14)),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: emailOrIdCtrl,
+                    decoration: InputDecoration(
+                      hintText: 'Nhập email hoặc mã số',
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isResetting ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Hủy', style: TextStyle(color: Colors.black54)),
+                ),
+                ElevatedButton(
+                  onPressed: isResetting ? null : () async {
+                    final input = emailOrIdCtrl.text.trim();
+                    if (input.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Vui lòng nhập thông tin'),
+                        backgroundColor: Colors.red,
+                      ));
+                      return;
+                    }
+
+                    setStateDialog(() => isResetting = true);
+                    try {
+                      String emailToSend = input;
+                      if (!input.contains('@')) {
+                        final querySnapshot = await FirebaseFirestore.instance
+                            .collection('users')
+                            .where('studentId', isEqualTo: input)
+                            .limit(1)
+                            .get();
+                        if (querySnapshot.docs.isEmpty) {
+                          throw Exception('Không tìm thấy tài khoản với mã số này');
+                        }
+                        emailToSend = querySnapshot.docs.first.data()['email'] ?? '';
+                      }
+                      
+                      await FirebaseAuth.instance.sendPasswordResetEmail(email: emailToSend);
+                      
+                      if (context.mounted) {
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: const Text('Liên kết đặt lại mật khẩu đã được gửi đến email của bạn.'),
+                          backgroundColor: Colors.green,
+                        ));
+                      }
+                    } on FirebaseAuthException catch (e) {
+                      if (context.mounted) {
+                        setStateDialog(() => isResetting = false);
+                        String msg = 'Đã có lỗi xảy ra';
+                        if (e.code == 'user-not-found' || e.code == 'invalid-email') {
+                           msg = 'Email không hợp lệ hoặc không tồn tại';
+                        }
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(msg),
+                          backgroundColor: Colors.red.shade700,
+                        ));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        setStateDialog(() => isResetting = false);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(e.toString().replaceAll('Exception: ', '')),
+                          backgroundColor: Colors.red.shade700,
+                        ));
+                      }
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: isResetting 
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Gửi'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
   }
 
   Widget _buildLoginBtn() {

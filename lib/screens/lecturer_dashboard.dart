@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
 import '../theme/app_colors.dart';
@@ -17,6 +18,7 @@ import '../widgets/role_selector.dart';
 import '../widgets/mail_client_view.dart';
 import '../widgets/forum_board_view.dart';
 import '../widgets/lecturer_library_view.dart';
+import '../widgets/live_clock.dart';
 import 'elearning/elearning_dashboard.dart';
 
 class LecturerDashboard extends StatefulWidget {
@@ -37,35 +39,122 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   String _lecturerRegSemester = 'Học kỳ 1';
   String _lecturerRegYear = '2025-2026';
   String? _selectedGradingCourseDocId;
-  
-  Timer? _timer;
-  DateTime _currentTime = DateTime.now();
+  Future<Map<String, dynamic>>? _detailedGradeFuture;
+  Map<String, dynamic>? _selectedEvaluation;
+
+  bool _isEditingInfo = false;
+  bool _isVerified = false;
+  String? _systemNote;
+  String? _avatarBase64;
+  final _formKey = GlobalKey<FormState>();
+  final ImagePicker _picker = ImagePicker();
+
+  final TextEditingController _fullNameController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
+  final TextEditingController _dobController = TextEditingController();
+  final TextEditingController _genderController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _facultyController = TextEditingController();
+  final TextEditingController _majorController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      setState(() {
-        _currentTime = DateTime.now();
-      });
-    });
+    _loadUserProfile();
+  }
+
+  Future<void> _loadUserProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        setState(() {
+          _fullNameController.text = data['fullName'] ?? '';
+          _idController.text = data['idNumber'] ?? '';
+          _dobController.text = data['dob'] ?? '';
+          _genderController.text = data['gender'] ?? '';
+          _emailController.text = data['email'] ?? widget.email;
+          _phoneController.text = data['phone'] ?? '';
+          _facultyController.text = data['faculty'] ?? '';
+          _majorController.text = data['major'] ?? '';
+          _avatarBase64 = data['avatarBase64'];
+          _isVerified = data['isVerified'] ?? false;
+          _systemNote = data['systemNote'];
+        });
+      }
+    }
   }
 
   final List<Map<String, dynamic>> _menus = [
-    {'icon': Icons.dashboard, 'label': 'Tổng quan'},
+    {'icon': Icons.person, 'label': 'Thông tin Cá nhân'},
     {'icon': Icons.article, 'label': 'Tin tức & Thông báo'},
     {'icon': Icons.calendar_today, 'label': 'Lịch dạy'},
     {'icon': Icons.how_to_reg, 'label': 'SV Đăng ký lớp'},
-    {'icon': Icons.assignment, 'label': 'Chấm bài'},
-    {'icon': Icons.people, 'label': 'Quản lý SV'},
+    {'icon': Icons.assignment, 'label': 'Bảng điểm Cụ thể'},
+    {'icon': Icons.rate_review, 'label': 'Đánh giá Giảng viên'},
   ];
 
   @override
   void dispose() {
-    _timer?.cancel();
     _titleCtrl.dispose();
     _contentCtrl.dispose();
+    _fullNameController.dispose();
+    _idController.dispose();
+    _dobController.dispose();
+    _genderController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _facultyController.dispose();
+    _majorController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    
+    final updates = {
+      'fullName': _fullNameController.text.trim(),
+      'idNumber': _idController.text.trim(),
+      'dob': _dobController.text.trim(),
+      'gender': _genderController.text.trim(),
+      'email': _emailController.text.trim(),
+      'phone': _phoneController.text.trim(),
+      'faculty': _facultyController.text.trim(),
+      'major': _majorController.text.trim(),
+      if (_avatarBase64 != null) 'avatarBase64': _avatarBase64,
+    };
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(updates, SetOptions(merge: true));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Cập nhật thông tin thành công')));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
+    }
+  }
+
+  Future<void> _pickImage() async {
+    try {
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 70,
+      );
+      if (image != null) {
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _avatarBase64 = base64Encode(bytes);
+        });
+        if (!_isEditingInfo) {
+          _saveProfile();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking image: $e');
+    }
   }
 
   @override
@@ -109,10 +198,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
             web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}', '_blank');
           }),
-          _buildTopNavLink(Icons.forum, 'Forum', onTap: () {
-            final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-            web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}&view=forum', '_blank');
-          }),
+          _buildTopNavLink(Icons.forum, 'Forum', onTap: () => setState(() => _menuIndex = 997)),
           _buildTopNavLink(Icons.library_books, 'e-Lib', onTap: () => setState(() => _menuIndex = 996)),
           const Spacer(),
           Text(widget.email, style: const TextStyle(color: Colors.white70, fontSize: 13)),
@@ -157,25 +243,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     );
   }
 
-  String _getWeekdayName(int weekday) {
-    switch (weekday) {
-      case 1: return 'Thứ hai';
-      case 2: return 'Thứ ba';
-      case 3: return 'Thứ tư';
-      case 4: return 'Thứ năm';
-      case 5: return 'Thứ sáu';
-      case 6: return 'Thứ bảy';
-      case 7: return 'Chủ nhật';
-      default: return '';
-    }
-  }
-
   Widget _buildBanner() {
-    final hourStr = _currentTime.hour.toString().padLeft(2, '0');
-    final minuteStr = _currentTime.minute.toString().padLeft(2, '0');
-    final secondStr = _currentTime.second.toString().padLeft(2, '0');
-    final dateStr = '${_getWeekdayName(_currentTime.weekday)}, ngày ${_currentTime.day} tháng ${_currentTime.month} năm ${_currentTime.year}';
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: GlassContainer(
@@ -193,29 +261,20 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             ),
             
             // Center: Clock
-            Column(
-              children: [
-                Row(
-                  children: [
-                    _buildTimeBox(hourStr[0]), _buildTimeBox(hourStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
-                    _buildTimeBox(minuteStr[0]), _buildTimeBox(minuteStr[1]), const Text(' : ', style: TextStyle(color: Colors.white, fontSize: 20)),
-                    _buildTimeBox(secondStr[0]), _buildTimeBox(secondStr[1]),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(dateStr, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 14)),
-              ],
-            ),
+            const LiveClock(),
             
             // Right: Quick Links
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildQuickLink(Icons.mail, 'EduTrack Gmail'),
+                _buildQuickLink(Icons.mail, 'EduTrack Gmail', onTap: () => setState(() => _menuIndex = 998)),
                 const SizedBox(height: 8),
-                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN'),
+                _buildQuickLink(Icons.language, 'HỌC TẬP TRỰC TUYẾN', onTap: () {
+                  final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
+                  web.window.open('https://edutrack-elearning.web.app/?userId=$uid&role=lecturer&email=${Uri.encodeComponent(widget.email)}', '_blank');
+                }),
                 const SizedBox(height: 8),
-                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK'),
+                _buildQuickLink(Icons.group, 'DIỄN ĐÀN HỌC TẬP EDUTRACK', onTap: () => setState(() => _menuIndex = 997)),
               ],
             ),
           ],
@@ -224,25 +283,16 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     );
   }
 
-  Widget _buildTimeBox(String digit) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(4),
+  Widget _buildQuickLink(IconData icon, String text, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Icon(icon, color: AppColors.lecturerColor, size: 16),
+          const SizedBox(width: 8),
+          Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+        ],
       ),
-      child: Text(digit, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-    );
-  }
-
-  Widget _buildQuickLink(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, color: AppColors.lecturerColor, size: 16),
-        const SizedBox(width: 8),
-        Text(text, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-      ],
     );
   }
 
@@ -305,13 +355,14 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
       margin: const EdgeInsets.only(left: 24, right: 24, top: 16, bottom: 24),
       child: GlassContainer(
         child: switch (_menuIndex) {
-          0 => _buildOverview(),
+          0 => _buildPersonalInfoContent(),
           1 => _buildNewsContent(),
           2 => _buildSchedule(),
           3 => _buildStudentRegistrations(),
           4 => _buildGrading(),
-          5 => _buildStudentMgmt(),
+          5 => _buildLecturerEvaluations(),
           996 => LecturerLibraryView(email: widget.email),
+          997 => ForumBoardView(role: UserRole.lecturer, email: widget.email),
           998 => MailClientView(role: UserRole.lecturer, email: widget.email),
           999 => ELearningDashboard(
                  role: UserRole.lecturer, 
@@ -326,97 +377,225 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     );
   }
 
+  Widget _tableHeader(String text, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Text(text, style: TextStyle(color: color ?? Colors.white, fontWeight: FontWeight.bold, fontSize: 13), textAlign: TextAlign.center),
+    );
+  }
+
+  Widget _tableCell(Widget child) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Center(child: child),
+    );
+  }
+
   // --- 0: Tổng quan ---
-  Widget _buildOverview() {
+  Widget _buildPersonalInfoContent() {
     return SingleChildScrollView(
+      physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.all(32),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.dashboard, color: AppColors.lecturerColor, size: 28),
-          SizedBox(width: 12),
-          Text('TỔNG QUAN', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
-        ]),
-        const SizedBox(height: 24),
-        Row(children: [
-          Expanded(child: _statCard('Lớp đang dạy', '4', Icons.class_, Colors.blue)),
-          const SizedBox(width: 16),
-          Expanded(child: _statCard('Sinh viên', '156', Icons.people, AppColors.lecturerColor)),
-          const SizedBox(width: 16),
-          Expanded(child: _statCard('Thông báo đã gửi', '${_notiService.notifications.where((n) => n.isFromLecturer).length}', Icons.campaign, Colors.orange)),
-        ]),
-        const SizedBox(height: 32),
-        const Text('Lịch dạy sắp tới', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 16),
-        StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('schedules')
-              .limit(3)
-              .snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
-              return const CircularProgressIndicator();
-            }
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const Text('Không có lịch dạy nào.', style: TextStyle(color: Colors.white70));
-            }
-            return Column(
-              children: snapshot.data!.docs.map((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                final startHour = (data['startHour'] as num?)?.toDouble() ?? 7.0;
-                final duration = (data['duration'] as num?)?.toDouble() ?? 2.0;
-                final endHour = startHour + duration;
-                
-                String formatHour(double h) {
-                  final hr = h.floor();
-                  final min = ((h - hr) * 60).round();
-                  return '${hr.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
-                }
-
-                return _scheduleItem(
-                  data['courseName'] ?? '',
-                  'Phòng ${data['room']} - Lớp ${data['studentClass']}',
-                  'Thứ ${data['dayOfWeek']}: ${formatHour(startHour)} - ${formatHour(endHour)}',
-                  Color(data['colorValue'] ?? Colors.blue.value),
-                );
-              }).toList(),
-            );
-          },
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.person, color: AppColors.lecturerColor, size: 28),
+                    SizedBox(width: 12),
+                    Text('THÔNG TIN CÁ NHÂN', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (_isEditingInfo) {
+                      if (_formKey.currentState!.validate()) {
+                        _saveProfile();
+                        setState(() {
+                          _isEditingInfo = false;
+                        });
+                      }
+                    } else {
+                      setState(() {
+                        _isEditingInfo = true;
+                      });
+                    }
+                  },
+                  icon: Icon(_isEditingInfo ? Icons.save : Icons.edit, size: 16),
+                  label: Text(_isEditingInfo ? 'Lưu thông tin' : 'Cập nhật thông tin'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.lecturerColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar section
+                Column(
+                  children: [
+                    Container(
+                      width: 120, height: 120,
+                      clipBehavior: Clip.hardEdge,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.lecturerColor.withValues(alpha: 0.2),
+                        border: Border.all(color: AppColors.lecturerColor, width: 2),
+                      ),
+                      child: _avatarBase64 != null
+                          ? Image.memory(base64Decode(_avatarBase64!), fit: BoxFit.cover)
+                          : Icon(Icons.person, size: 60, color: Colors.white.withValues(alpha: 0.8)),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.lecturerColor.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('Cập nhật ảnh', style: TextStyle(color: AppColors.lecturerColor, fontSize: 13, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 40),
+                // Info details
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_isVerified) ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(children: [
+                                Icon(Icons.verified, color: Colors.green, size: 18),
+                                SizedBox(width: 8),
+                                Text('Tài khoản đã được hệ thống xác thực', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13)),
+                              ]),
+                              if (_systemNote != null) ...[
+                                const SizedBox(height: 6),
+                                Text(_systemNote!, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontStyle: FontStyle.italic)),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số GV/ID', _idController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Ngày sinh', _dobController, 'Giới tính', _genderController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Email', _emailController, 'Số điện thoại', _phoneController),
+                      const SizedBox(height: 16),
+                      Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
+                      const SizedBox(height: 16),
+                      _buildInfoRow('Khoa', _facultyController, 'Ngành/Bộ môn', _majorController),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-      ]),
+      ),
     );
   }
 
-  Widget _statCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(16)),
-      child: Column(children: [
-        Icon(icon, color: color, size: 32),
-        const SizedBox(height: 12),
-        Text(value, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12)),
-      ]),
+  Widget _buildInfoRow(String label1, dynamic val1, String label2, dynamic val2, {bool isFirstFixed = false, bool isSecondFixed = false}) {
+    return Row(
+      children: [
+        Expanded(child: _buildInfoField(label1, val1, isFixed: isFirstFixed)),
+        const SizedBox(width: 24),
+        Expanded(child: _buildInfoField(label2, val2, isFixed: isSecondFixed)),
+      ],
     );
   }
 
-  Widget _scheduleItem(String subj, String room, String time, Color c) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), border: Border(left: BorderSide(color: c, width: 4)), borderRadius: const BorderRadius.only(topRight: Radius.circular(8), bottomRight: Radius.circular(8))),
-      child: Row(children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(subj, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(room, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
-        ])),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(color: c.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
-          child: Text(time, style: TextStyle(color: c, fontWeight: FontWeight.bold, fontSize: 12)),
-        ),
-      ]),
+  Widget _buildInfoField(String label, dynamic val, {bool isFixed = false}) {
+    bool isString = val is String;
+    TextEditingController? controller = isString ? null : val as TextEditingController;
+    
+    String displayText = isString ? val : controller!.text;
+    bool isEmpty = displayText.trim().isEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+        const SizedBox(height: 8),
+        if (!_isEditingInfo || isFixed)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              isEmpty ? 'Chưa cập nhật' : displayText,
+              style: TextStyle(
+                color: isEmpty ? Colors.grey.shade400 : Colors.black87,
+                fontSize: 14,
+                fontStyle: isEmpty ? FontStyle.italic : FontStyle.normal,
+              ),
+            ),
+          )
+        else
+          TextFormField(
+            controller: controller,
+            style: const TextStyle(color: Colors.black87, fontSize: 14),
+            decoration: InputDecoration(
+              hintText: 'Nhập $label',
+              hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey.shade200),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: AppColors.lecturerColor),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -793,7 +972,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               const Row(children: [
                 Icon(Icons.assignment, color: AppColors.lecturerColor, size: 28),
                 SizedBox(width: 12),
-                Text('QUẢN LÝ ĐIỂM SỐ', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text('BẢNG ĐIỂM CỤ THỂ', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
               ]),
               Row(children: [
                 _filterDropdown('Năm học', _lecturerRegYear, ['2024-2025', '2025-2026', '2026-2027'], (v) {
@@ -845,61 +1024,86 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   }
 
   Widget _buildCourseListForGrading(Map<String, List<QueryDocumentSnapshot>> courseMap) {
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      itemCount: courseMap.length,
-      itemBuilder: (context, index) {
-        final courseDocId = courseMap.keys.elementAt(index);
-        final students = courseMap[courseDocId]!;
-        final courseData = students.first.data() as Map<String, dynamic>;
-        
-        final courseName = courseData['courseName'] ?? 'Unknown';
-        final classGroup = courseData['classGroup'] ?? '';
-        final cId = courseData['courseId'] ?? '';
-        
-        int submittedCount = 0;
-        int gradedCount = 0;
-        for (var s in students) {
-          final sd = s.data() as Map<String, dynamic>;
-          final status = sd['gradeStatus'] ?? 'none';
-          if (status == 'lecturer_submitted' || status == 'admin_published') {
-            submittedCount++;
-          }
-          if (sd['attendanceScore'] != null || sd['midtermScore'] != null || sd['finalScore'] != null) {
-            gradedCount++;
-          }
-        }
-        
-        final isAllSubmitted = submittedCount == students.length && students.isNotEmpty;
+    if (courseMap.isEmpty) {
+      return const Center(child: Text('Không có lớp nào', style: TextStyle(color: Colors.white70)));
+    }
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-          ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            leading: CircleAvatar(
-              backgroundColor: isAllSubmitted ? Colors.green.withValues(alpha: 0.2) : AppColors.lecturerColor.withValues(alpha: 0.2),
-              child: Icon(isAllSubmitted ? Icons.check_circle : Icons.edit_document, color: isAllSubmitted ? Colors.green : AppColors.lecturerColor),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.02),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        child: Table(
+          border: TableBorder.symmetric(inside: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+          columnWidths: const {
+            0: FlexColumnWidth(1.5),
+            1: FlexColumnWidth(3),
+            2: FlexColumnWidth(1),
+            3: FlexColumnWidth(1.5),
+            4: FlexColumnWidth(1.5),
+          },
+          children: [
+            TableRow(
+              decoration: BoxDecoration(color: AppColors.lecturerColor.withValues(alpha: 0.2), borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8))),
+              children: [
+                _tableHeader('Mã MH'),
+                _tableHeader('Tên Môn (Lớp)'),
+                _tableHeader('Sĩ số'),
+                _tableHeader('Tiến độ'),
+                _tableHeader('Thao tác'),
+              ],
             ),
-            title: Text('$courseName ($classGroup)', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 8.0),
-              child: Text('Mã MH: $cId  |  Sĩ số: ${students.length}  |  Đã nhập điểm: $gradedCount/${students.length}', style: const TextStyle(color: Colors.white70)),
-            ),
-            trailing: isAllSubmitted 
-                ? const Text('Đã gửi Admin', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold))
-                : ElevatedButton(
-                    onPressed: () => setState(() => _selectedGradingCourseDocId = courseDocId),
-                    style: ElevatedButton.styleFrom(backgroundColor: AppColors.lecturerColor, foregroundColor: Colors.white),
-                    child: const Text('Nhập điểm'),
+            ...courseMap.entries.map((entry) {
+              final courseDocId = entry.key;
+              final students = entry.value;
+              final courseData = students.first.data() as Map<String, dynamic>;
+              
+              final courseName = courseData['courseName'] ?? 'Unknown';
+              final classGroup = courseData['classGroup'] ?? '';
+              final cId = courseData['courseId'] ?? '';
+              
+              int submittedCount = 0;
+              int gradedCount = 0;
+              for (var s in students) {
+                final sd = s.data() as Map<String, dynamic>;
+                final status = sd['gradeStatus'] ?? 'none';
+                if (status == 'lecturer_submitted' || status == 'admin_published') {
+                  submittedCount++;
+                }
+                if (sd['attendanceScore'] != null || sd['midtermScore'] != null || sd['finalScore'] != null || (sd['detailedGrades'] as List?)?.isNotEmpty == true) {
+                  gradedCount++;
+                }
+              }
+              
+              final isAllSubmitted = submittedCount == students.length && students.isNotEmpty;
+              
+              return TableRow(
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
+                children: [
+                  _tableCell(Text(cId, style: const TextStyle(color: Colors.white))),
+                  _tableCell(Text('$courseName ($classGroup)', style: const TextStyle(color: Colors.white))),
+                  _tableCell(Text('${students.length}', style: const TextStyle(color: Colors.white))),
+                  _tableCell(Text('$gradedCount/${students.length}', style: const TextStyle(color: Colors.white70))),
+                  _tableCell(
+                    isAllSubmitted 
+                      ? const Text('Đã gửi Admin', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 13))
+                      : InkWell(
+                          onTap: () => setState(() {
+                            _selectedGradingCourseDocId = courseDocId;
+                            _detailedGradeFuture = _fetchDetailedGradeData(courseDocId);
+                          }),
+                          child: const Text('Nhập điểm', style: TextStyle(color: AppColors.lecturerColor, decoration: TextDecoration.underline, fontSize: 13, fontWeight: FontWeight.bold)),
+                        ),
                   ),
-          ),
-        );
-      },
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -909,7 +1113,6 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     final classGroup = courseData['classGroup'] ?? '';
     final courseDocId = courseData['courseDocId'] ?? '';
 
-    // Check if any is submitted
     bool isLocked = false;
     for (var s in students) {
       final sd = s.data() as Map<String, dynamic>;
@@ -921,6 +1124,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     }
 
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -933,24 +1137,6 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               Text('Lớp: $courseName ($classGroup)', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
               const Spacer(),
               if (!isLocked) ...[
-                ElevatedButton.icon(
-                  onPressed: () async {
-                    // Mô phỏng đồng bộ điểm Sakai
-                    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-                    for (var s in students) {
-                      final randomFinal = (50 + (DateTime.now().millisecond % 50)) / 10.0; // Random 5.0 -> 9.9
-                      await _regService.updateStudentGrade(regDocId: s.id, finalScore: randomFinal, status: 'lecturer_draft');
-                    }
-                    if (mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã đồng bộ điểm Cuối kỳ từ Sakai!'), backgroundColor: Colors.green));
-                    }
-                  },
-                  icon: const Icon(Icons.sync),
-                  label: const Text('Lấy điểm Sakai'),
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue.withValues(alpha: 0.8), foregroundColor: Colors.white),
-                ),
-                const SizedBox(width: 12),
                 ElevatedButton.icon(
                   onPressed: () async {
                     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
@@ -976,63 +1162,413 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
         ),
         const SizedBox(height: 16),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            itemCount: students.length,
-            itemBuilder: (context, index) {
-              final studentDoc = students[index];
-              final data = studentDoc.data() as Map<String, dynamic>;
-              final userId = data['userId'] ?? 'Unknown';
-              final att = data['attendanceScore']?.toString() ?? '';
-              final mid = data['midtermScore']?.toString() ?? '';
-              final fin = data['finalScore']?.toString() ?? '-';
-              
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.03), borderRadius: BorderRadius.circular(8)),
-                child: Row(
-                  children: [
-                    Expanded(flex: 2, child: Text(userId, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))),
-                    Expanded(
-                      flex: 1,
-                      child: isLocked ? Text('CC: ${att.isEmpty ? '-' : att}', style: const TextStyle(color: Colors.white70)) : TextField(
-                        controller: TextEditingController(text: att),
-                        style: const TextStyle(color: Colors.white),
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Chuyên cần (10%)', labelStyle: TextStyle(color: Colors.white54, fontSize: 12), isDense: true),
-                        onSubmitted: (v) {
-                          final val = double.tryParse(v);
-                          if (val != null) _regService.updateStudentGrade(regDocId: studentDoc.id, attendanceScore: val, status: 'lecturer_draft');
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: _detailedGradeFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.lecturerColor));
+              }
+
+              final data = snapshot.data ?? {};
+              final assignments = data['assignments'] as List<QueryDocumentSnapshot>? ?? [];
+              final quizzes = data['quizzes'] as List<QueryDocumentSnapshot>? ?? [];
+              final assignmentGrades = data['assignmentGrades'] as Map<String, Map<String, double>>? ?? {};
+              final quizGrades = data['quizGrades'] as Map<String, Map<String, double>>? ?? {};
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.shade700, width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade700,
+                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                            const SizedBox(width: 8),
+                            const Text('Bảng điểm Cụ thể', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Center(
+                          child: Text(
+                            'TÊN LỚP: ${courseData['courseId'] ?? ''} - ${courseData['courseName']?.toString().toUpperCase() ?? ''}',
+                            style: TextStyle(color: Colors.red.shade700, fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                child: Container(
+                                  constraints: BoxConstraints(minWidth: constraints.maxWidth - 32),
+                                  child: Table(
+                                    border: TableBorder.all(color: Colors.grey.shade300, width: 1),
+                                    defaultColumnWidth: const IntrinsicColumnWidth(),
+                              children: [
+                                TableRow(
+                                  decoration: BoxDecoration(color: Colors.grey.shade200),
+                                  children: [
+                            _tableHeader('MSSV', color: Colors.black87),
+                            _tableHeader('Họ Tên', color: Colors.black87),
+                            _tableHeader('Chuyên cần\n(10%)', color: Colors.black87),
+                            _tableHeader('Giữa kỳ\n(20%)', color: Colors.black87),
+                            _tableHeader('Cuối kỳ\n(70%)', color: Colors.black87),
+                            ...assignments.map((a) => _tableHeader('${a['title']}\n(Bài tập)', color: Colors.black87)),
+                            ...quizzes.map((q) => _tableHeader('${q['title']}\n(Kiểm tra)', color: Colors.black87)),
+                            _tableHeader('Tổng\n(Hệ 10)', color: Colors.black87),
+                            _tableHeader('Điểm\nChữ', color: Colors.black87),
+                            _tableHeader('Hệ 4', color: Colors.black87),
+                          ],
+                        ),
+                        ...students.map((sDoc) {
+                          final sData = sDoc.data() as Map<String, dynamic>;
+                          final studentUserId = sData['userId'] ?? '';
+                          final studentIdStr = sData['studentId'] ?? studentUserId;
+                          final studentNameStr = sData['studentName'] ?? 'Unknown';
+                          final savedDetailed = sData['detailedGrades'] as List<dynamic>? ?? [];
+
+                          // Build map of saved detailed grades to prioritize them if they exist
+                          final Map<String, double> savedMap = {};
+                          for (var item in savedDetailed) {
+                            if (item is Map<String, dynamic> && item['title'] != null && item['grade'] != null) {
+                              savedMap[item['title']] = (item['grade'] as num).toDouble();
+                            }
+                          }
+
+                          return TableRow(
+                            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade300))),
+                            children: [
+                              _tableCell(Text(studentIdStr, style: const TextStyle(color: Colors.black87))),
+                              _tableCell(Text(studentNameStr, style: const TextStyle(color: Colors.black87))),
+                              _tableCell(_buildInputCell(sDoc, 'attendanceScore', isLocked)),
+                              _tableCell(_buildInputCell(sDoc, 'midtermScore', isLocked)),
+                              _tableCell(_buildInputCell(sDoc, 'finalScore', isLocked)),
+                              ...assignments.map((a) {
+                                final title = a['title'] as String;
+                                final maxGrade = (a['maxGrade'] as num?)?.toDouble() ?? 10.0;
+                                // If saved in registrations, use it. Else fetch from elearning_submissions
+                                double initialGrade = savedMap[title] ?? (assignmentGrades[a.id]?[studentUserId] ?? 0.0);
+                                
+                                return _tableCell(
+                                  isLocked 
+                                    ? Text(initialGrade.toStringAsFixed(1), style: const TextStyle(color: Colors.orangeAccent))
+                                    : GradeInputCell(
+                                        initialValue: initialGrade > 0 ? initialGrade.toStringAsFixed(1) : '',
+                                        onSaved: (val) {
+                                          final parsed = double.tryParse(val);
+                                          if (parsed != null) {
+                                            _updateDetailedGrade(sDoc, savedDetailed, title, 'assignment', parsed, maxGrade);
+                                          }
+                                        },
+                                      )
+                                );
+                              }),
+                              ...quizzes.map((q) {
+                                final title = q['title'] as String;
+                                // Auto sync quiz grades
+                                double grade = savedMap[title] ?? (quizGrades[q.id]?[studentUserId] ?? 0.0);
+
+                                return _tableCell(
+                                  Text(grade > 0 ? grade.toStringAsFixed(1) : '-', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                                );
+                              }),
+                              _tableCell(
+                                Text(
+                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
+                                    ? (((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7)).toStringAsFixed(1)
+                                    : '-',
+                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
+                                )
+                              ),
+                              _tableCell(
+                                Text(
+                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
+                                    ? _getLetterGrade((((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7)))
+                                    : '-',
+                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
+                                )
+                              ),
+                              _tableCell(
+                                Text(
+                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
+                                    ? _getGpa4((((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7))).toStringAsFixed(1)
+                                    : '-',
+                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
+                                )
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
                         },
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 1,
-                      child: isLocked ? Text('GK: ${mid.isEmpty ? '-' : mid}', style: const TextStyle(color: Colors.white70)) : TextField(
-                        controller: TextEditingController(text: mid),
-                        style: const TextStyle(color: Colors.white),
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(labelText: 'Giữa kỳ (20%)', labelStyle: TextStyle(color: Colors.white54, fontSize: 12), isDense: true),
-                        onSubmitted: (v) {
-                          final val = double.tryParse(v);
-                          if (val != null) _regService.updateStudentGrade(regDocId: studentDoc.id, midtermScore: val, status: 'lecturer_draft');
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      flex: 1,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(4)),
-                        alignment: Alignment.center,
-                        child: Text('Thi CK (70%)\n$fin', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                      )
                     ),
                   ],
                 ),
+              ),
+            );
+          },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<Map<String, dynamic>> _fetchDetailedGradeData(String courseDocId) async {
+    final assignments = await FirebaseFirestore.instance.collection('elearning_assignments').where('courseDocId', isEqualTo: courseDocId).get();
+    final quizzes = await FirebaseFirestore.instance.collection('elearning_quizzes').where('courseDocId', isEqualTo: courseDocId).get();
+    
+    final Map<String, Map<String, double>> assignmentGrades = {}; 
+    for (var a in assignments.docs) {
+        assignmentGrades[a.id] = {};
+        final subs = await FirebaseFirestore.instance.collection('elearning_submissions').where('assignmentId', isEqualTo: a.id).get();
+        for (var sub in subs.docs) {
+            final data = sub.data();
+            assignmentGrades[a.id]![data['studentId']] = (data['grade'] as num?)?.toDouble() ?? 0.0;
+        }
+    }
+    
+    final Map<String, Map<String, double>> quizGrades = {};
+    for (var q in quizzes.docs) {
+        quizGrades[q.id] = {};
+        final attempts = await FirebaseFirestore.instance.collection('elearning_quiz_attempts').where('quizId', isEqualTo: q.id).get();
+        for (var att in attempts.docs) {
+            final data = att.data();
+            quizGrades[q.id]![data['studentId']] = (data['score'] as num?)?.toDouble() ?? 0.0;
+        }
+    }
+
+    return {
+        'assignments': assignments.docs,
+        'quizzes': quizzes.docs,
+        'assignmentGrades': assignmentGrades,
+        'quizGrades': quizGrades,
+    };
+  }
+
+  Widget _buildInputCell(QueryDocumentSnapshot sDoc, String field, bool isLocked) {
+    final data = sDoc.data() as Map<String, dynamic>;
+    final val = data[field]?.toString() ?? '';
+    if (isLocked) return Text(val.isEmpty ? '-' : val, style: const TextStyle(color: Colors.black87));
+    return GradeInputCell(
+      initialValue: val,
+      onSaved: (v) {
+        final parsed = double.tryParse(v);
+        if (parsed != null) {
+          final updateData = <String, double?>{};
+          if (field == 'attendanceScore') updateData['attendanceScore'] = parsed;
+          if (field == 'midtermScore') updateData['midtermScore'] = parsed;
+          if (field == 'finalScore') updateData['finalScore'] = parsed;
+          _regService.updateStudentGrade(
+            regDocId: sDoc.id,
+            attendanceScore: updateData['attendanceScore'],
+            midtermScore: updateData['midtermScore'],
+            finalScore: updateData['finalScore'],
+            status: 'lecturer_draft',
+          );
+        }
+      },
+    );
+  }
+
+  void _updateDetailedGrade(QueryDocumentSnapshot sDoc, List<dynamic> currentDetailed, String title, String type, double grade, double maxGrade) {
+    final List<Map<String, dynamic>> updatedList = currentDetailed.map((e) => e as Map<String, dynamic>).toList();
+    final idx = updatedList.indexWhere((e) => e['title'] == title);
+    if (idx >= 0) {
+      updatedList[idx]['grade'] = grade;
+      updatedList[idx]['maxGrade'] = maxGrade;
+    } else {
+      updatedList.add({
+        'title': title,
+        'type': type,
+        'grade': grade,
+        'maxGrade': maxGrade,
+        'submittedAt': Timestamp.now(),
+      });
+    }
+    _regService.updateStudentGrade(
+      regDocId: sDoc.id,
+      detailedGrades: updatedList,
+      status: 'lecturer_draft',
+    );
+  }
+
+  // --- 5: Quản lý SV ---
+  Widget _buildLecturerEvaluations() {
+    if (_selectedEvaluation != null) {
+      return _buildEvaluationDetail(_selectedEvaluation!);
+    }
+
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.all(24),
+          child: Row(
+            children: [
+              Icon(Icons.rate_review, color: AppColors.lecturerColor, size: 28),
+              SizedBox(width: 12),
+              Text('QUẢN LÝ ĐÁNH GIÁ GIẢNG VIÊN', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('lecturer_evaluations')
+                .where('lecturerEmail', isEqualTo: widget.email)
+                .snapshots(),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(child: Text('Lỗi: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
+              }
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator(color: AppColors.lecturerColor));
+              }
+              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.speaker_notes_off, size: 64, color: Colors.white.withValues(alpha: 0.2)),
+                      const SizedBox(height: 16),
+                      Text('Chưa có đánh giá nào từ sinh viên.', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16)),
+                    ],
+                  ),
+                );
+              }
+
+              final docs = snapshot.data!.docs.toList();
+              // Sort locally
+              docs.sort((a, b) {
+                final tsA = (a.data() as Map<String, dynamic>)['submittedAt'] as Timestamp?;
+                final tsB = (b.data() as Map<String, dynamic>)['submittedAt'] as Timestamp?;
+                if (tsA == null && tsB == null) return 0;
+                if (tsA == null) return 1;
+                if (tsB == null) return -1;
+                return tsB.compareTo(tsA); // descending
+              });
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                itemCount: docs.length,
+                itemBuilder: (context, index) {
+                  final data = docs[index].data() as Map<String, dynamic>;
+                  final courseName = data['courseName'] ?? 'Không rõ môn học';
+                  final academicYear = data['academicYear'] ?? '';
+                  final semester = data['semester'] ?? '';
+                  final comment = data['comment'] ?? '';
+                  final ts = data['submittedAt'] as Timestamp?;
+                  final dateStr = ts != null ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}' : '';
+                  final answers = data['answers'] as Map<String, dynamic>? ?? {};
+                  
+                  // Calculate average score if answers exist (assuming 1-5 scale)
+                  double avgScore = 0;
+                  int validAnswers = 0;
+                  answers.forEach((key, value) {
+                    if (value is num) {
+                      avgScore += value;
+                      validAnswers++;
+                    } else if (value is String && num.tryParse(value) != null) {
+                      avgScore += num.parse(value);
+                      validAnswers++;
+                    }
+                  });
+                  if (validAnswers > 0) avgScore /= validAnswers;
+
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedEvaluation = data;
+                      });
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.lecturerColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: AppColors.lecturerColor.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(courseName, style: const TextStyle(color: AppColors.lecturerColor, fontWeight: FontWeight.bold, fontSize: 13)),
+                              ),
+                              const Spacer(),
+                              Text(dateStr, style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.calendar_today, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+                              const SizedBox(width: 6),
+                              Text('$semester - Năm học $academicYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+                              const Spacer(),
+                              if (validAnswers > 0)
+                                Row(
+                                  children: [
+                                    const Icon(Icons.star, color: Colors.amber, size: 16),
+                                    const SizedBox(width: 4),
+                                    Text(avgScore.toStringAsFixed(1), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                            ],
+                          ),
+                          if (comment.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.02),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border(left: BorderSide(color: AppColors.lecturerColor.withValues(alpha: 0.5), width: 3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Ý kiến đóng góp:', style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 12, fontStyle: FontStyle.italic)),
+                                  const SizedBox(height: 4),
+                                  Text(comment, style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.4)),
+                                ],
+                              ),
+                            ),
+                          ]
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -1041,38 +1577,162 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     );
   }
 
-  // --- 5: Quản lý SV ---
-  Widget _buildStudentMgmt() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Row(children: [
-          Icon(Icons.people, color: AppColors.lecturerColor, size: 28),
-          SizedBox(width: 12),
-          Text('QUẢN LÝ SINH VIÊN', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
-        ]),
-        const SizedBox(height: 24),
-        _studentRow('Nguyễn Văn A', '29210247142', 'KTPM2022'),
-        _studentRow('Trần Thị B', '29210247143', 'KTPM2022'),
-        _studentRow('Lê Văn C', '29210247144', 'KTPM2022'),
-        _studentRow('Phạm Thị D', '29210247145', 'CNTT2023'),
-      ]),
-    );
-  }
+  Widget _buildEvaluationDetail(Map<String, dynamic> evalData) {
+    final formId = evalData['formId'] as String?;
+    final courseName = evalData['courseName'] ?? 'Không rõ môn học';
+    final academicYear = evalData['academicYear'] ?? '';
+    final semester = evalData['semester'] ?? '';
+    final comment = evalData['comment'] ?? '';
+    final ts = evalData['submittedAt'] as Timestamp?;
+    final dateStr = ts != null ? '${ts.toDate().day}/${ts.toDate().month}/${ts.toDate().year}' : '';
+    final answers = evalData['answers'] as Map<String, dynamic>? ?? {};
 
-  Widget _studentRow(String name, String id, String cls) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(10)),
-      child: Row(children: [
-        CircleAvatar(backgroundColor: AppColors.lecturerColor.withValues(alpha: 0.2), radius: 18, child: const Icon(Icons.person, color: AppColors.lecturerColor, size: 18)),
-        const SizedBox(width: 16),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-          Text('MSSV: $id  •  Lớp: $cls', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 12)),
-        ])),
-      ]),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _selectedEvaluation = null),
+                child: const Row(
+                  children: [
+                    Icon(Icons.arrow_back, color: AppColors.lecturerColor, size: 24),
+                    SizedBox(width: 8),
+                    Text('Quay lại', style: TextStyle(color: AppColors.lecturerColor, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 24),
+              const Expanded(
+                child: Text('CHI TIẾT ĐÁNH GIÁ', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 24),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.lecturerColor.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.lecturerColor.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(courseName, style: const TextStyle(color: AppColors.lecturerColor, fontWeight: FontWeight.bold, fontSize: 14)),
+                      ),
+                      const Spacer(),
+                      Text('Ngày gửi: $dateStr', style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today, size: 14, color: Colors.white.withValues(alpha: 0.4)),
+                      const SizedBox(width: 6),
+                      Text('$semester - Năm học $academicYear', style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  const Divider(color: Colors.white24),
+                  const SizedBox(height: 16),
+                  
+                  if (formId == null)
+                    const Text('Không tìm thấy thông tin biểu mẫu.', style: TextStyle(color: Colors.white70))
+                  else
+                    StreamBuilder<DocumentSnapshot>(
+                      stream: FirebaseFirestore.instance.collection('evaluation_forms').doc(formId).snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator());
+                        }
+                        if (!snapshot.hasData || !snapshot.data!.exists) {
+                          return const Text('Biểu mẫu đã bị xóa hoặc không tồn tại.', style: TextStyle(color: Colors.white70));
+                        }
+                        final formData = snapshot.data!.data() as Map<String, dynamic>;
+                        final formTitle = formData['title'] ?? 'PHIẾU KHẢO SÁT';
+                        final rawQuestions = formData['questions'] as List<dynamic>? ?? [];
+                        final questions = rawQuestions.map((q) => Map<String, dynamic>.from(q as Map)).toList();
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(formTitle, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 16),
+                            ...questions.asMap().entries.map((entry) {
+                              final qIndex = entry.key;
+                              final qData = entry.value;
+                              final qText = qData['text'] ?? '';
+                              final ansVal = answers['q_$qIndex'];
+                              
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Câu ${qIndex + 1}: $qText', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.arrow_right, color: AppColors.lecturerColor, size: 16),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            ansVal != null ? 'Đánh giá: $ansVal' : 'Không có đánh giá',
+                                            style: TextStyle(color: ansVal != null ? Colors.amber : Colors.white54, fontWeight: FontWeight.bold),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ],
+                        );
+                      },
+                    ),
+                  
+                  if (comment.isNotEmpty) ...[
+                    const SizedBox(height: 24),
+                    const Text('Ý KIẾN ĐÓNG GÓP', style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border(left: BorderSide(color: AppColors.lecturerColor.withValues(alpha: 0.5), width: 4)),
+                      ),
+                      child: Text(comment, style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.5)),
+                    ),
+                  ]
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1205,6 +1865,89 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: onChanged,
         ),
+      ),
+    );
+  }
+  String _getLetterGrade(double total10) {
+    if (total10 >= 8.5) return 'A';
+    if (total10 >= 7.0) return 'B';
+    if (total10 >= 5.5) return 'C';
+    if (total10 >= 4.0) return 'D';
+    return 'F';
+  }
+
+  double _getGpa4(double total10) {
+    if (total10 >= 8.5) return 4.0;
+    if (total10 >= 7.0) return 3.0;
+    if (total10 >= 5.5) return 2.0;
+    if (total10 >= 4.0) return 1.0;
+    return 0.0;
+  }
+}
+
+class GradeInputCell extends StatefulWidget {
+  final String initialValue;
+  final ValueChanged<String> onSaved;
+
+  const GradeInputCell({Key? key, required this.initialValue, required this.onSaved}) : super(key: key);
+
+  @override
+  State<GradeInputCell> createState() => _GradeInputCellState();
+}
+
+class _GradeInputCellState extends State<GradeInputCell> {
+  late TextEditingController _controller;
+  late FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      if (!_focusNode.hasFocus) {
+        if (_controller.text != widget.initialValue) {
+          widget.onSaved(_controller.text);
+        }
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant GradeInputCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialValue != widget.initialValue && !_focusNode.hasFocus) {
+      _controller.text = widget.initialValue;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 60,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        style: const TextStyle(color: Colors.black87, fontSize: 13),
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          isDense: true, 
+          contentPadding: const EdgeInsets.all(8),
+          enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade400)),
+          focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.red.shade700)),
+        ),
+        onSubmitted: (v) {
+          if (v != widget.initialValue) {
+            widget.onSaved(v);
+          }
+        },
       ),
     );
   }
