@@ -361,10 +361,6 @@ class _LoginScreenState extends State<LoginScreen>
             _buildRememberRow(),
             const SizedBox(height: 32),
             _buildLoginBtn(),
-            const SizedBox(height: 24),
-            _buildDivider(),
-            const SizedBox(height: 24),
-            _buildGoogleBtn(),
             const SizedBox(height: 32),
             _buildSignUpLink(),
           ],
@@ -606,33 +602,7 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  Widget _buildDivider() {
-    return Row(children: [
-      Expanded(child: Container(height: 1, color: Colors.black12)),
-      const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 16),
-        child: Text('hoặc', style: TextStyle(color: Colors.black38, fontSize: 13)),
-      ),
-      Expanded(child: Container(height: 1, color: Colors.black12)),
-    ]);
-  }
 
-  Widget _buildGoogleBtn() {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: OutlinedButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.g_mobiledata_rounded, color: Colors.black87, size: 28),
-        label: const Text('Đăng nhập với Google',
-          style: TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Colors.black12, width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-    );
-  }
 
   Widget _buildSignUpLink() {
     return Center(
