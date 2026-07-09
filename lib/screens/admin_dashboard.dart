@@ -3802,24 +3802,30 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   const SizedBox(height: 16),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      proofUrl,
-                      fit: BoxFit.contain,
-                      height: 400,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return const SizedBox(
+                    child: proofUrl.startsWith('data:image')
+                      ? Image.memory(
+                          base64Decode(proofUrl.split(',')[1]),
+                          fit: BoxFit.contain,
                           height: 400,
-                          child: Center(child: CircularProgressIndicator()),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return const SizedBox(
+                        )
+                      : Image.network(
+                          proofUrl,
+                          fit: BoxFit.contain,
                           height: 400,
-                          child: Center(child: Text('Không thể tải ảnh', style: TextStyle(color: Colors.red))),
-                        );
-                      },
-                    ),
+                          loadingBuilder: (context, child, loadingProgress) {
+                            if (loadingProgress == null) return child;
+                            return const SizedBox(
+                              height: 400,
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return const SizedBox(
+                              height: 400,
+                              child: Center(child: Text('Không thể tải ảnh', style: TextStyle(color: Colors.red))),
+                            );
+                          },
+                        ),
                   ),
                   const SizedBox(height: 16),
                   ElevatedButton(
