@@ -1805,8 +1805,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final isLocked = status == 'locked';
     final userId = user['id']?.toString();
 
+    Stream<DatabaseEvent>? lastLoginStream;
+    try {
+      lastLoginStream = FirebaseDatabase.instance.ref('users/$userId/lastLogin').onValue;
+    } catch (e) {
+      debugPrint('Error loading lastLogin stream: $e');
+    }
+
     return StreamBuilder<DatabaseEvent>(
-      stream: FirebaseDatabase.instance.ref('users/$userId/lastLogin').onValue,
+      stream: lastLoginStream,
       builder: (context, snapshot) {
         String lastLoginText = 'Chưa đăng nhập';
         if (snapshot.hasData && snapshot.data!.snapshot.value != null) {

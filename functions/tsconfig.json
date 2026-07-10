@@ -5,6 +5,7 @@
   ],
   "compilerOptions": {
     "module": "NodeNext",
+    "rootDir": "src",
     "noImplicitReturns": true,
     "outDir": "lib",
     "sourceMap": true,
