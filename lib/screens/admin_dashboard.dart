@@ -684,13 +684,55 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             ),
           )
+        else if (label == 'Giới tính')
+          _buildDropdownField(label, controller!, ['Nam', 'Nữ', 'Khác'])
+        else if (label == 'Phòng ban')
+          _buildDropdownField(label, controller!, ['Ban Giám hiệu', 'Phòng Đào tạo', 'Phòng Công tác Sinh viên', 'Phòng Hành chính Nhân sự', 'Phòng Kế hoạch Tài chính', 'Phòng Quản trị Thiết bị', 'Khoa Công nghệ Thông tin', 'Khoa Ngoại ngữ', 'Khoa Kinh tế', 'Khác'])
+        else if (label == 'Chức vụ')
+          _buildDropdownField(label, controller!, ['Hiệu trưởng', 'Phó Hiệu trưởng', 'Trưởng phòng', 'Phó phòng', 'Trưởng khoa', 'Phó khoa', 'Giảng viên', 'Chuyên viên', 'Khác'])
         else
           TextFormField(
             controller: controller,
+            readOnly: label == 'Ngày sinh',
+            onTap: label == 'Ngày sinh' ? () async {
+              final parts = controller!.text.split('/');
+              DateTime initialDate = DateTime(2005);
+              if (parts.length == 3) {
+                final d = int.tryParse(parts[0]);
+                final m = int.tryParse(parts[1]);
+                final y = int.tryParse(parts[2]);
+                if (d != null && m != null && y != null) {
+                  initialDate = DateTime(y, m, d);
+                }
+              }
+              final DateTime? picked = await showDatePicker(
+                context: context,
+                initialDate: initialDate,
+                firstDate: DateTime(1950),
+                lastDate: DateTime.now(),
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: const ColorScheme.dark(
+                        primary: AppColors.adminColor,
+                        onPrimary: Colors.white,
+                        surface: Color(0xFF2A2D2B),
+                        onSurface: Colors.white,
+                      ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+              if (picked != null) {
+                controller!.text = "${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}";
+              }
+            } : null,
             style: const TextStyle(color: Colors.black87, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Nhập $label',
+              hintText: label == 'Ngày sinh' ? 'Chọn ngày sinh' : 'Nhập $label',
               hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+              suffixIcon: label == 'Ngày sinh' ? const Icon(Icons.calendar_today, color: Colors.black45, size: 20) : null,
               filled: true,
               fillColor: Colors.white,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -709,6 +751,58 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildDropdownField(String label, TextEditingController controller, List<String> items) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: items.contains(controller.text) ? controller.text : null,
+        hint: Text('Chọn $label', style: TextStyle(color: Colors.grey.shade400, fontSize: 14)),
+        dropdownColor: Colors.white,
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
+        icon: const Icon(Icons.arrow_drop_down, color: Colors.black45),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.adminColor),
+          ),
+        ),
+        items: items.map((String val) {
+          return DropdownMenuItem<String>(
+            value: val,
+            child: Text(val),
+          );
+        }).toList(),
+        onChanged: (val) {
+          if (val != null) {
+            controller.text = val;
+          }
+        },
+      ),
     );
   }
 

@@ -39,6 +39,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   String _lecturerRegSemester = 'Học kỳ 1';
   String _lecturerRegYear = '2025-2026';
   String? _selectedGradingCourseDocId;
+  QueryDocumentSnapshot? _selectedGradingStudent;
   Future<Map<String, dynamic>>? _detailedGradeFuture;
   Map<String, dynamic>? _selectedEvaluation;
 
@@ -571,13 +572,55 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               ),
             ),
           )
+        else if (label == 'Giới tính')
+          _buildDropdownField(label, controller!, ['Nam', 'Nữ', 'Khác'])
+        else if (label == 'Khoa')
+          _buildDropdownField(label, controller!, ['Khoa Công nghệ Thông tin', 'Khoa Ngoại ngữ', 'Khoa Kinh tế', 'Khoa Xây dựng', 'Khoa Kiến trúc', 'Khác'])
+        else if (label == 'Ngành/Bộ môn')
+          _buildDropdownField(label, controller!, ['Công nghệ phần mềm', 'Hệ thống thông tin', 'Khoa học máy tính', 'Kỹ thuật máy tính', 'An toàn thông tin', 'Ngôn ngữ Anh', 'Quản trị kinh doanh', 'Kế toán', 'Tài chính - Ngân hàng', 'Khác'])
         else
           TextFormField(
             controller: controller,
+            readOnly: label == 'Ngày sinh',
+            onTap: label == 'Ngày sinh' ? () async {
+              final parts = controller!.text.split('/');
+              DateTime initialDate = DateTime(2005);
+              if (parts.length == 3) {
+                final d = int.tryParse(parts[0]);
+                final m = int.tryParse(parts[1]);
+                final y = int.tryParse(parts[2]);
+                if (d != null && m != null && y != null) {
+                  initialDate = DateTime(y, m, d);
+                }
+              }
+              final DateTime? picked = await showDatePicker(
+                context: context,
+                initialDate: initialDate,
+                firstDate: DateTime(1950),
+                lastDate: DateTime.now(),
+                builder: (context, child) {
+                  return Theme(
+                    data: Theme.of(context).copyWith(
+                      colorScheme: const ColorScheme.dark(
+                        primary: AppColors.lecturerColor,
+                        onPrimary: Colors.white,
+                        surface: Color(0xFF2A2D2B),
+                        onSurface: Colors.white,
+                      ),
+                    ),
+                    child: child!,
+                  );
+                },
+              );
+              if (picked != null) {
+                controller!.text = "${picked.day.toString().padLeft(2, '0')}/${picked.month.toString().padLeft(2, '0')}/${picked.year}";
+              }
+            } : null,
             style: const TextStyle(color: Colors.black87, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Nhập $label',
+              hintText: label == 'Ngày sinh' ? 'Chọn ngày sinh' : 'Nhập $label',
               hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+              suffixIcon: label == 'Ngày sinh' ? const Icon(Icons.calendar_today, color: Colors.black45, size: 20) : null,
               filled: true,
               fillColor: Colors.white,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -596,6 +639,58 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildDropdownField(String label, TextEditingController controller, List<String> items) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: DropdownButtonFormField<String>(
+        value: items.contains(controller.text) ? controller.text : null,
+        hint: Text('Chọn $label', style: TextStyle(color: Colors.grey.shade400, fontSize: 14)),
+        dropdownColor: Colors.white,
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
+        icon: const Icon(Icons.arrow_drop_down, color: Colors.black45),
+        decoration: InputDecoration(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          isDense: true,
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.lecturerColor),
+          ),
+        ),
+        items: items.map((String val) {
+          return DropdownMenuItem<String>(
+            value: val,
+            child: Text(val),
+          );
+        }).toList(),
+        onChanged: (val) {
+          if (val != null) {
+            controller.text = val;
+          }
+        },
+      ),
     );
   }
 
@@ -1013,8 +1108,10 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
 
               if (_selectedGradingCourseDocId == null || !courseMap.containsKey(_selectedGradingCourseDocId)) {
                 return _buildCourseListForGrading(courseMap);
-              } else {
+              } else if (_selectedGradingStudent == null) {
                 return _buildStudentListForGrading(courseMap[_selectedGradingCourseDocId]!);
+              } else {
+                return _buildSingleStudentGradingDetail(courseMap[_selectedGradingCourseDocId]!, _selectedGradingStudent!);
               }
             },
           ),
@@ -1143,6 +1240,10 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                     await _regService.submitCourseGradesToAdmin(courseDocId);
                     if (mounted) {
                       Navigator.pop(context);
+                      setState(() {
+                         // Force refresh to lock UI immediately if needed
+                         _selectedGradingCourseDocId = null; 
+                      });
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gửi bảng điểm cho Admin phê duyệt!'), backgroundColor: Colors.green));
                     }
                   },
@@ -1162,6 +1263,163 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
         ),
         const SizedBox(height: 16),
         Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.02),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              ),
+              child: Table(
+                border: TableBorder.symmetric(inside: BorderSide(color: Colors.white.withValues(alpha: 0.05))),
+                columnWidths: const {
+                  0: FlexColumnWidth(1.5),
+                  1: FlexColumnWidth(3),
+                  2: FlexColumnWidth(1.5),
+                  3: FlexColumnWidth(1.5),
+                },
+                children: [
+                  TableRow(
+                    decoration: BoxDecoration(color: AppColors.lecturerColor.withValues(alpha: 0.2), borderRadius: const BorderRadius.only(topLeft: Radius.circular(8), topRight: Radius.circular(8))),
+                    children: [
+                      _tableHeader('MSSV'),
+                      _tableHeader('Họ Tên'),
+                      _tableHeader('Tổng kết (Hệ 10)'),
+                      _tableHeader('Thao tác'),
+                    ],
+                  ),
+                  ...students.map((sDoc) {
+                    final sData = sDoc.data() as Map<String, dynamic>;
+                    final studentUserId = sData['userId'] ?? '';
+                    final studentIdStr = sData['studentId'] ?? studentUserId;
+                    final studentNameStr = sData['studentName'] ?? 'Unknown';
+                    
+                    double attScore = double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0;
+                    double midScore = double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0;
+                    double finScore = double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0;
+                    bool hasScore = sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null;
+                    double total10 = (attScore * 0.1) + (midScore * 0.2) + (finScore * 0.7);
+
+                    return TableRow(
+                      decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.05)))),
+                      children: [
+                        _tableCell(Text(studentIdStr, style: const TextStyle(color: Colors.white))),
+                        _tableCell(Text(studentNameStr, style: const TextStyle(color: Colors.white))),
+                        _tableCell(Text(hasScore ? total10.toStringAsFixed(1) : 'Chưa có điểm', style: const TextStyle(color: Colors.white70))),
+                        _tableCell(
+                          InkWell(
+                            onTap: () => setState(() => _selectedGradingStudent = sDoc),
+                            child: const Text('Nhập điểm', style: TextStyle(color: AppColors.lecturerColor, decoration: TextDecoration.underline, fontSize: 13, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTableHeader(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+      child: Text(text, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87), textAlign: TextAlign.center),
+    );
+  }
+
+  TableRow _buildGradeTableRow({
+    required String title,
+    required double grade,
+    required double maxGrade,
+    required double maxPercent,
+    required bool isLocked,
+    required bool isReadOnly,
+    Function(String)? onSaved,
+  }) {
+    double percent = maxGrade > 0 ? (grade / maxGrade) * maxPercent : 0.0;
+    
+    Widget inputCell;
+    if (isReadOnly || isLocked) {
+      inputCell = Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(grade > 0 ? grade.toStringAsFixed(1) : '', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.black87)),
+      );
+    } else {
+      inputCell = Padding(
+        padding: const EdgeInsets.all(4.0),
+        child: Center(
+          child: GradeInputCell(
+            initialValue: grade > 0 ? grade.toStringAsFixed(1) : '',
+            onSaved: onSaved ?? (val) {},
+          ),
+        ),
+      );
+    }
+
+    return TableRow(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: Colors.grey.shade200))),
+      children: [
+        Padding(padding: const EdgeInsets.all(12), child: Text(title, style: const TextStyle(fontWeight: FontWeight.w500, color: Colors.black87))),
+        inputCell,
+        const Padding(padding: EdgeInsets.all(12), child: Text('', textAlign: TextAlign.center)),
+        Padding(padding: const EdgeInsets.all(12), child: Text(maxGrade.toStringAsFixed(2), textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87))),
+        Padding(padding: const EdgeInsets.all(12), child: Text(grade > 0 ? '${percent.toStringAsFixed(2)}%' : '', textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87))),
+        Padding(padding: const EdgeInsets.all(12), child: Text('${maxPercent.toStringAsFixed(2)}%', textAlign: TextAlign.center, style: const TextStyle(color: Colors.black87))),
+      ],
+    );
+  }
+
+  Widget _buildSingleStudentGradingDetail(List<QueryDocumentSnapshot> students, QueryDocumentSnapshot sDoc) {
+    final courseData = students.first.data() as Map<String, dynamic>;
+    final courseName = courseData['courseName'] ?? '';
+    final classGroup = courseData['classGroup'] ?? '';
+
+    final sData = sDoc.data() as Map<String, dynamic>;
+    final studentUserId = sData['userId'] ?? '';
+    final studentIdStr = sData['studentId'] ?? studentUserId;
+    final studentNameStr = sData['studentName'] ?? 'Unknown';
+
+    // FIX: Check isLocked per student!
+    final status = sData['gradeStatus'] ?? 'none';
+    bool isLocked = status == 'lecturer_submitted' || status == 'admin_published';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => setState(() => _selectedGradingStudent = null),
+              ),
+              Text('Sinh viên: $studentNameStr ($studentIdStr)', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text('Lớp: $courseName ($classGroup)', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            ],
+          ),
+        ),
+        if (isLocked)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: Colors.red.shade100, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.shade300)),
+            child: const Row(
+              children: [
+                Icon(Icons.lock, color: Colors.red, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Bảng điểm này đã được chốt và gửi cho Admin phê duyệt. Bạn không thể sửa điểm lúc này.', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+        Expanded(
           child: FutureBuilder<Map<String, dynamic>>(
             future: _detailedGradeFuture,
             builder: (context, snapshot) {
@@ -1175,28 +1433,56 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
               final assignmentGrades = data['assignmentGrades'] as Map<String, Map<String, double>>? ?? {};
               final quizGrades = data['quizGrades'] as Map<String, Map<String, double>>? ?? {};
 
+              final savedDetailed = sData['detailedGrades'] as List<dynamic>? ?? [];
+              final Map<String, double> savedMap = {};
+              for (var item in savedDetailed) {
+                if (item is Map<String, dynamic> && item['title'] != null && item['grade'] != null) {
+                  savedMap[item['title']] = (item['grade'] as num).toDouble();
+                }
+              }
+
+              double attScore = double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0;
+              double midScore = double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0;
+              double finScore = double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0;
+              bool hasScore = sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null;
+              
+              double total10 = (attScore * 0.1) + (midScore * 0.2) + (finScore * 0.7);
+              double totalPercent = (attScore > 0 ? (attScore/10)*10 : 0) + (midScore > 0 ? (midScore/10)*20 : 0) + (finScore > 0 ? (finScore/10)*70 : 0);
+
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.red.shade700, width: 1),
+                    border: Border.all(color: Colors.red.shade700, width: 2),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                         decoration: BoxDecoration(
                           color: Colors.red.shade700,
-                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(11), topRight: Radius.circular(11)),
+                          borderRadius: const BorderRadius.only(topLeft: Radius.circular(10), topRight: Radius.circular(10)),
                         ),
                         child: Row(
                           children: [
                             const Icon(Icons.calendar_today, color: Colors.white, size: 20),
                             const SizedBox(width: 8),
-                            const Text('Bảng điểm Cụ thể', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                            const Text('Điểm Cá nhân', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: hasScore ? Colors.green.shade600 : Colors.white24,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                hasScore ? 'Hệ 10: ${total10.toStringAsFixed(1)} | Điểm Chữ: ${_getLetterGrade(total10)}' : 'Chưa có điểm',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1210,125 +1496,87 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                         ),
                       ),
                       Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            return SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: Container(
-                                  constraints: BoxConstraints(minWidth: constraints.maxWidth - 32),
-                                  child: Table(
-                                    border: TableBorder.all(color: Colors.grey.shade300, width: 1),
-                                    defaultColumnWidth: const IntrinsicColumnWidth(),
-                              children: [
-                                TableRow(
-                                  decoration: BoxDecoration(color: Colors.grey.shade200),
-                                  children: [
-                            _tableHeader('MSSV', color: Colors.black87),
-                            _tableHeader('Họ Tên', color: Colors.black87),
-                            _tableHeader('Chuyên cần\n(10%)', color: Colors.black87),
-                            _tableHeader('Giữa kỳ\n(20%)', color: Colors.black87),
-                            _tableHeader('Cuối kỳ\n(70%)', color: Colors.black87),
-                            ...assignments.map((a) => _tableHeader('${a['title']}\n(Bài tập)', color: Colors.black87)),
-                            ...quizzes.map((q) => _tableHeader('${q['title']}\n(Kiểm tra)', color: Colors.black87)),
-                            _tableHeader('Tổng\n(Hệ 10)', color: Colors.black87),
-                            _tableHeader('Điểm\nChữ', color: Colors.black87),
-                            _tableHeader('Hệ 4', color: Colors.black87),
-                          ],
-                        ),
-                        ...students.map((sDoc) {
-                          final sData = sDoc.data() as Map<String, dynamic>;
-                          final studentUserId = sData['userId'] ?? '';
-                          final studentIdStr = sData['studentId'] ?? studentUserId;
-                          final studentNameStr = sData['studentName'] ?? 'Unknown';
-                          final savedDetailed = sData['detailedGrades'] as List<dynamic>? ?? [];
-
-                          // Build map of saved detailed grades to prioritize them if they exist
-                          final Map<String, double> savedMap = {};
-                          for (var item in savedDetailed) {
-                            if (item is Map<String, dynamic> && item['title'] != null && item['grade'] != null) {
-                              savedMap[item['title']] = (item['grade'] as num).toDouble();
-                            }
-                          }
-
-                          return TableRow(
-                            decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.shade300))),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(16),
+                          child: Table(
+                            border: TableBorder.all(color: Colors.grey.shade300),
+                            columnWidths: const {
+                              0: FlexColumnWidth(3),
+                              1: FlexColumnWidth(1),
+                              2: FlexColumnWidth(1),
+                              3: FlexColumnWidth(1),
+                              4: FlexColumnWidth(1),
+                              5: FlexColumnWidth(1),
+                            },
                             children: [
-                              _tableCell(Text(studentIdStr, style: const TextStyle(color: Colors.black87))),
-                              _tableCell(Text(studentNameStr, style: const TextStyle(color: Colors.black87))),
-                              _tableCell(_buildInputCell(sDoc, 'attendanceScore', isLocked)),
-                              _tableCell(_buildInputCell(sDoc, 'midtermScore', isLocked)),
-                              _tableCell(_buildInputCell(sDoc, 'finalScore', isLocked)),
+                              TableRow(
+                                decoration: BoxDecoration(color: Colors.grey.shade100),
+                                children: [
+                                  _buildTableHeader('Tên Bài Giao'),
+                                  _buildTableHeader('Điểm lần 1'),
+                                  _buildTableHeader('Điểm lần 2'),
+                                  _buildTableHeader('Thang Điểm'),
+                                  _buildTableHeader('% Điểm'),
+                                  _buildTableHeader('% Điểm tối đa'),
+                                ],
+                              ),
+                              _buildGradeTableRow(
+                                title: 'Chuyên cần', grade: attScore, maxGrade: 10.0, maxPercent: 10.0, isLocked: isLocked, isReadOnly: false,
+                                onSaved: (val) {
+                                  final parsed = double.tryParse(val);
+                                  if (parsed != null) _regService.updateStudentGrade(regDocId: sDoc.id, attendanceScore: parsed, status: 'lecturer_draft');
+                                }
+                              ),
+                              _buildGradeTableRow(
+                                title: 'Giữa kỳ', grade: midScore, maxGrade: 10.0, maxPercent: 20.0, isLocked: isLocked, isReadOnly: false,
+                                onSaved: (val) {
+                                  final parsed = double.tryParse(val);
+                                  if (parsed != null) _regService.updateStudentGrade(regDocId: sDoc.id, midtermScore: parsed, status: 'lecturer_draft');
+                                }
+                              ),
+                              _buildGradeTableRow(
+                                title: 'Cuối kỳ', grade: finScore, maxGrade: 10.0, maxPercent: 70.0, isLocked: isLocked, isReadOnly: false,
+                                onSaved: (val) {
+                                  final parsed = double.tryParse(val);
+                                  if (parsed != null) _regService.updateStudentGrade(regDocId: sDoc.id, finalScore: parsed, status: 'lecturer_draft');
+                                }
+                              ),
                               ...assignments.map((a) {
                                 final title = a['title'] as String;
-                                final maxGrade = (a['maxGrade'] as num?)?.toDouble() ?? 10.0;
-                                // If saved in registrations, use it. Else fetch from elearning_submissions
-                                double initialGrade = savedMap[title] ?? (assignmentGrades[a.id]?[studentUserId] ?? 0.0);
-                                
-                                return _tableCell(
-                                  isLocked 
-                                    ? Text(initialGrade.toStringAsFixed(1), style: const TextStyle(color: Colors.orangeAccent))
-                                    : GradeInputCell(
-                                        initialValue: initialGrade > 0 ? initialGrade.toStringAsFixed(1) : '',
-                                        onSaved: (val) {
-                                          final parsed = double.tryParse(val);
-                                          if (parsed != null) {
-                                            _updateDetailedGrade(sDoc, savedDetailed, title, 'assignment', parsed, maxGrade);
-                                          }
-                                        },
-                                      )
+                                final maxG = (a['maxGrade'] as num?)?.toDouble() ?? 10.0;
+                                double g = savedMap[title] ?? (assignmentGrades[a.id]?[studentUserId] ?? 0.0);
+                                return _buildGradeTableRow(
+                                  title: '$title (Bài tập)', grade: g, maxGrade: maxG, maxPercent: 0.0, isLocked: isLocked, isReadOnly: false,
+                                  onSaved: (val) {
+                                    final parsed = double.tryParse(val);
+                                    if (parsed != null) _updateDetailedGrade(sDoc, savedDetailed, title, 'assignment', parsed, maxG);
+                                  }
                                 );
                               }),
                               ...quizzes.map((q) {
                                 final title = q['title'] as String;
-                                // Auto sync quiz grades
-                                double grade = savedMap[title] ?? (quizGrades[q.id]?[studentUserId] ?? 0.0);
-
-                                return _tableCell(
-                                  Text(grade > 0 ? grade.toStringAsFixed(1) : '-', style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+                                double g = savedMap[title] ?? (quizGrades[q.id]?[studentUserId] ?? 0.0);
+                                return _buildGradeTableRow(
+                                  title: '$title (Kiểm tra)', grade: g, maxGrade: 10.0, maxPercent: 0.0, isLocked: isLocked, isReadOnly: true,
                                 );
                               }),
-                              _tableCell(
-                                Text(
-                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
-                                    ? (((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7)).toStringAsFixed(1)
-                                    : '-',
-                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
-                                )
-                              ),
-                              _tableCell(
-                                Text(
-                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
-                                    ? _getLetterGrade((((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7)))
-                                    : '-',
-                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
-                                )
-                              ),
-                              _tableCell(
-                                Text(
-                                  sData['attendanceScore'] != null || sData['midtermScore'] != null || sData['finalScore'] != null 
-                                    ? _getGpa4((((double.tryParse(sData['attendanceScore']?.toString() ?? '0') ?? 0.0) * 0.1) + ((double.tryParse(sData['midtermScore']?.toString() ?? '0') ?? 0.0) * 0.2) + ((double.tryParse(sData['finalScore']?.toString() ?? '0') ?? 0.0) * 0.7))).toStringAsFixed(1)
-                                    : '-',
-                                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)
-                                )
-                              ),
+                              TableRow(
+                                children: [
+                                  const Padding(padding: EdgeInsets.all(12), child: Text('TỔNG:', textAlign: TextAlign.right, style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black87))),
+                                  const SizedBox(), const SizedBox(), const SizedBox(),
+                                  Padding(padding: const EdgeInsets.all(12), child: Text('${totalPercent.toStringAsFixed(2)}%', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87))),
+                                  const SizedBox(),
+                                ]
+                              )
                             ],
-                          );
-                        }).toList(),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
+                          ),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            );
-          },
+              );
+            },
           ),
         ),
       ],
@@ -1365,6 +1613,25 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
         'assignmentGrades': assignmentGrades,
         'quizGrades': quizGrades,
     };
+  }
+
+  Widget _buildGradeCard(String label, Widget child) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 140),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w600), textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
   }
 
   Widget _buildInputCell(QueryDocumentSnapshot sDoc, String field, bool isLocked) {
@@ -1931,15 +2198,15 @@ class _GradeInputCellState extends State<GradeInputCell> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 60,
+      width: 80,
       child: TextField(
         controller: _controller,
         focusNode: _focusNode,
-        style: const TextStyle(color: Colors.black87, fontSize: 13),
+        style: const TextStyle(color: Colors.black87, fontSize: 14),
         keyboardType: TextInputType.number,
         decoration: InputDecoration(
           isDense: true, 
-          contentPadding: const EdgeInsets.all(8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey.shade400)),
           focusedBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.red.shade700)),
         ),
