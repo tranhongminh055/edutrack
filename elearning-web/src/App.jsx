@@ -56,10 +56,17 @@ function ELearningApp() {
         const courseMap = new Map();
         snapshot.docs.forEach(doc => {
           const data = doc.data();
-          const key = data.courseDocId;
+          
+          // Fallback to extract courseDocId from registration doc.id (format: studentId_courseDocId)
+          let cDocId = data.courseDocId;
+          if (!cDocId && doc.id.includes('_')) {
+            cDocId = doc.id.substring(doc.id.indexOf('_') + 1);
+          }
+          
+          const key = cDocId || data.courseId;
           if (!courseMap.has(key)) {
             courseMap.set(key, {
-              docId: data.courseDocId,
+              docId: cDocId,
               courseName: data.courseName,
               courseId: data.courseId,
               classGroup: data.classGroup,
