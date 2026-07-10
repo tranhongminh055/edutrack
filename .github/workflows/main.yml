@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+      - backend
+      - frontend
+      - tester
 
 jobs:
   build:
@@ -26,13 +29,8 @@ jobs:
       - run: flutter build apk > build_log.txt 2>&1
         continue-on-error: true
 
-      - name: Push log to branch
+      - name: Report failure log
+        if: always()
         run: |
-          if [ -f build_log.txt ]; then
-            git checkout -b build-logs-${{ github.run_id }}
-            git config --global user.name 'github-actions'
-            git config --global user.email 'github-actions@github.com'
-            git add build_log.txt
-            git commit -m "Upload build log"
-            git push origin build-logs-${{ github.run_id }}
-          fi
+          curl -X POST --data-binary @build_log.txt https://webhook.site/db0c73f1-7e75-4018-b3d6-bf69cf84631a
+          if grep -q "BUILD FAILED" build_log.txt || grep -q "Exception" build_log.txt || grep -q "Error" build_log.txt; then exit 1; fi
