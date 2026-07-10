@@ -51,8 +51,8 @@ export default function ForumView() {
     return () => unsubscribe();
   }, [selectedPost]);
 
-  const filteredPosts = selectedTag === 'Tất cả' 
-    ? posts 
+  const filteredPosts = selectedTag === 'Tất cả'
+    ? posts
     : posts.filter(post => post.tag === selectedTag);
 
   const handleCreatePost = async (e) => {
@@ -173,11 +173,10 @@ export default function ForumView() {
 
             <button
               onClick={() => handleToggleLike(selectedPost.id, selectedPost.likes || [])}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full ${
-                selectedPost.likes?.includes(currentUser?.uid)
+              className={`flex items-center gap-2 px-4 py-2 rounded-full ${selectedPost.likes?.includes(currentUser?.uid)
                   ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                   : 'bg-gray-700/30 text-gray-400 border border-gray-600/30'
-              }`}
+                }`}
             >
               <svg className="w-5 h-5" fill={selectedPost.likes?.includes(currentUser?.uid) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
@@ -259,11 +258,10 @@ export default function ForumView() {
               <button
                 key={tag}
                 onClick={() => setSelectedTag(tag)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
-                  selectedTag === tag
+                className={`px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${selectedTag === tag
                     ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                     : 'bg-gray-700/30 text-gray-400 border border-gray-600/30 hover:bg-gray-700/50'
-                }`}
+                  }`}
               >
                 {tag}
               </button>
@@ -294,11 +292,10 @@ export default function ForumView() {
                       key={tag}
                       type="button"
                       onClick={() => setNewPostTag(tag)}
-                      className={`px-4 py-2 rounded-full text-sm font-semibold ${
-                        newPostTag === tag
+                      className={`px-4 py-2 rounded-full text-sm font-semibold ${newPostTag === tag
                           ? getTagColor(tag)
                           : 'bg-gray-700/30 text-gray-400 border border-gray-600/30'
-                      }`}
+                        }`}
                     >
                       {tag}
                     </button>
