@@ -1505,9 +1505,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildPendingAdminRow(Map<String, dynamic> user) {
-    final fullName = user['fullName'] ?? 'N/A';
-    final email = user['email'] ?? 'N/A';
-    final userId = user['id'] as String;
+    final fullName = user['fullName']?.toString() ?? 'N/A';
+    final email = user['email']?.toString() ?? 'N/A';
+    final userId = user['id'].toString();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1660,10 +1660,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildPendingUserRow(Map<String, dynamic> user) {
-    final fullName = user['fullName'] ?? 'N/A';
-    final email = user['email'] ?? 'N/A';
-    final role = user['role'] ?? 'N/A';
-    final userId = user['id'] as String;
+    final fullName = user['fullName']?.toString() ?? 'N/A';
+    final email = user['email']?.toString() ?? 'N/A';
+    final role = user['role']?.toString() ?? 'N/A';
+    final userId = user['id'].toString();
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1798,19 +1798,25 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildUserRow(Map<String, dynamic> user) {
-    final fullName = user['fullName'] ?? 'N/A';
-    final email = user['email'] ?? 'N/A';
-    final role = user['role'] ?? 'N/A';
-    final status = user['status'] as String?;
+    final fullName = user['fullName']?.toString() ?? 'N/A';
+    final email = user['email']?.toString() ?? 'N/A';
+    final role = user['role']?.toString() ?? 'N/A';
+    final status = user['status']?.toString();
     final isLocked = status == 'locked';
-    final userId = user['id'] as String?;
+    final userId = user['id']?.toString();
 
     return StreamBuilder<DatabaseEvent>(
       stream: FirebaseDatabase.instance.ref('users/$userId/lastLogin').onValue,
       builder: (context, snapshot) {
         String lastLoginText = 'Chưa đăng nhập';
         if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
-          final timestamp = snapshot.data!.snapshot.value as int?;
+          final val = snapshot.data!.snapshot.value;
+          int? timestamp;
+          if (val is num) {
+            timestamp = val.toInt();
+          } else if (val is String) {
+            timestamp = int.tryParse(val);
+          }
           if (timestamp != null) {
             final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
             lastLoginText = '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
