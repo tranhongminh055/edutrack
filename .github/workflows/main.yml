@@ -17,14 +17,15 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.2'
+          channel: 'stable'
 
       - uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - run: flutter pub get
+      - run: flutter pub get > pub_log.txt 2>&1
+        continue-on-error: true
 
       - run: flutter build apk > build_log.txt 2>&1
         continue-on-error: true
@@ -32,5 +33,6 @@ jobs:
       - name: Report failure log
         if: always()
         run: |
-          curl -X POST --data-binary @build_log.txt https://webhook.site/db0c73f1-7e75-4018-b3d6-bf69cf84631a
-          if grep -q "BUILD FAILED" build_log.txt || grep -q "Exception" build_log.txt || grep -q "Error" build_log.txt; then exit 1; fi
+          cat pub_log.txt build_log.txt > combined_log.txt || true
+          curl -X POST --data-binary @combined_log.txt https://webhook.site/db0c73f1-7e75-4018-b3d6-bf69cf84631a
+          if grep -q "BUILD FAILED" combined_log.txt || grep -q "Exception" combined_log.txt || grep -q "Error" combined_log.txt; then exit 1; fi
