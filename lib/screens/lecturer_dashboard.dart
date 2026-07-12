@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:js_interop';
 import 'package:web/web.dart' as web;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
@@ -20,6 +23,9 @@ import '../widgets/forum_board_view.dart';
 import '../widgets/lecturer_library_view.dart';
 import '../widgets/live_clock.dart';
 import 'elearning/elearning_dashboard.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class LecturerDashboard extends StatefulWidget {
   final String email;
@@ -35,7 +41,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
   final CourseRegistrationService _regService = CourseRegistrationService();
   final TextEditingController _titleCtrl = TextEditingController();
   final TextEditingController _contentCtrl = TextEditingController();
-  final bool _showSuccess = false;
+  bool _showSuccess = false;
   String _lecturerRegSemester = 'Học kỳ 1';
   String _lecturerRegYear = '2025-2026';
   String? _selectedGradingCourseDocId;
@@ -502,7 +508,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                         ),
                         const SizedBox(height: 20),
                       ],
-                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số GV/ID', _idController),
+                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số GV/ID', _idController, isSecondFixed: true),
                       const SizedBox(height: 16),
                       Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
                       const SizedBox(height: 16),
@@ -693,6 +699,32 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
       ),
     );
   }
+  void _sendNotification() {
+    if (_titleCtrl.text.trim().isEmpty || _contentCtrl.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập đầy đủ tiêu đề và nội dung!'), backgroundColor: Colors.red),
+      );
+      return;
+    }
+    final now = DateTime.now();
+    final dateStr = '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
+    _notiService.addNotification(AppNotification(
+      id: 'lecturer_${DateTime.now().millisecondsSinceEpoch}',
+      title: _titleCtrl.text.trim(),
+      sender: widget.email.split('@').first,
+      senderRole: 'Giảng viên',
+      date: dateStr,
+      content: _contentCtrl.text.trim(),
+      isFromLecturer: true,
+    ));
+    _titleCtrl.clear();
+    _contentCtrl.clear();
+    setState(() => _showSuccess = true);
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _showSuccess = false);
+    });
+  }
+
 
   // --- 1: Tin tức & Thông báo ---
   Widget _buildNewsContent() {
@@ -711,6 +743,77 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                 Text('TIN TỨC & THÔNG BÁO', style: TextStyle(color: AppColors.lecturerColor, fontSize: 18, fontWeight: FontWeight.bold)),
               ]),
               const SizedBox(height: 24),
+              
+              // --- Compose Notification Form ---
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.edit_note, color: Colors.white70, size: 20),
+                        SizedBox(width: 8),
+                        Text('Đăng thông báo mới', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _titleCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Tiêu đề thông báo',
+                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                        filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        prefixIcon: const Icon(Icons.title, color: AppColors.lecturerColor),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _contentCtrl,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 4,
+                      decoration: InputDecoration(
+                        hintText: 'Nội dung chi tiết...',
+                        hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.3)),
+                        filled: true, fillColor: Colors.white.withValues(alpha: 0.08),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: _sendNotification,
+                          icon: const Icon(Icons.send, size: 16),
+                          label: const Text('Gửi thông báo', style: TextStyle(fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.lecturerColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        if (_showSuccess)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 16),
+                            child: Text('Gửi thành công!', style: TextStyle(color: Colors.greenAccent, fontWeight: FontWeight.bold)),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+              
+              const Text('DANH SÁCH THÔNG BÁO', style: TextStyle(color: Colors.white70, fontSize: 14, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
               ...notifications.map((n) => _buildNotificationItem(
                 n.title, n.senderRole, n.date,
                 isNew: _notiService.isNew(n.id),
@@ -729,7 +832,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                       children: [
                         Icon(Icons.notifications_off, size: 48, color: Colors.white.withValues(alpha: 0.3)),
                         const SizedBox(height: 16),
-                        Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
+                        Text('Hiện tại chưa có thông báo nào', style: TextStyle(color: Colors.white.withValues(alpha: 0.5))),
                       ],
                     ),
                   ),
@@ -741,50 +844,62 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
     );
   }
 
-  void _showNotificationDetail(AppNotification n) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF1a2a1f),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.campaign, color: n.isFromLecturer ? AppColors.lecturerColor : AppColors.studentColor, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(n.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                  IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(ctx)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Icon(Icons.person_outline, size: 14, color: Colors.white.withValues(alpha: 0.5)),
-                  const SizedBox(width: 4),
-                  Text(n.sender, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
-                  const SizedBox(width: 16),
-                  Icon(Icons.access_time, size: 14, color: Colors.white.withValues(alpha: 0.5)),
-                  const SizedBox(width: 4),
-                  Text(n.date, style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 13)),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Divider(color: Colors.white.withValues(alpha: 0.1)),
-              const SizedBox(height: 16),
-              Text(n.content ?? 'Không có nội dung chi tiết.', style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.7)),
-            ],
-          ),
-        ),
+  Future<Uint8List> _generateNotificationPdf(AppNotification n, PdfPageFormat format) async {
+    final pdf = pw.Document();
+    
+    final font = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: format,
+        build: (context) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.all(32),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  n.title,
+                  style: pw.TextStyle(font: fontBold, fontSize: 24, color: PdfColors.black),
+                ),
+                pw.SizedBox(height: 16),
+                pw.Row(
+                  children: [
+                    pw.Text('Người gửi: ${n.sender}', style: pw.TextStyle(font: font, fontSize: 14, color: PdfColors.grey700)),
+                    pw.SizedBox(width: 24),
+                    pw.Text('Thời gian: ${n.date}', style: pw.TextStyle(font: font, fontSize: 14, color: PdfColors.grey700)),
+                  ],
+                ),
+                pw.SizedBox(height: 24),
+                pw.Divider(color: PdfColors.grey300),
+                pw.SizedBox(height: 24),
+                pw.Text(
+                  n.content ?? 'Không có nội dung chi tiết.',
+                  style: pw.TextStyle(font: font, fontSize: 14, lineSpacing: 1.5),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
+    return pdf.save();
+  }
+
+  void _showNotificationDetail(AppNotification n) async {
+    try {
+      final pdfBytes = await _generateNotificationPdf(n, PdfPageFormat.a4);
+      final blob = web.Blob([pdfBytes.toJS].toJS, web.BlobPropertyBag(type: 'application/pdf'));
+      final url = web.URL.createObjectURL(blob);
+      web.window.open(url, '_blank');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tạo PDF: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Widget _buildNotificationItem(String title, String sender, String date, {bool isNew = false, bool isFromLecturer = false, VoidCallback? onTap}) {
@@ -888,6 +1003,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
           child: StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
                 .collection('schedules')
+                .where('lecturerEmail', isEqualTo: widget.email)
                 .snapshots(),
             builder: (context, snapshot) {
               // Only show loading on initial load, not on stream updates
@@ -908,7 +1024,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
                   dayOfWeek: data['dayOfWeek'] ?? 2,
                   startHour: (data['startHour'] as num?)?.toDouble() ?? 7.0,
                   duration: (data['duration'] as num?)?.toDouble() ?? 2.0,
-                  color: Color(data['colorValue'] ?? Colors.blue.value),
+                  color: Color(Colors.primaries[(data['courseName']?.toString() ?? '').hashCode.abs() % Colors.primaries.length].value),
                 );
               }).toList();
 
@@ -1037,7 +1153,7 @@ class _LecturerDashboardState extends State<LecturerDashboard> {
             'duration': duration,
             'lecturerEmail': lecturerEmail,
             'studentClass': studentClass,
-            'colorValue': Colors.primaries[dayOfWeek % Colors.primaries.length].value,
+            'colorValue': Colors.primaries[courseName.hashCode.abs() % Colors.primaries.length].value,
           });
         }
         

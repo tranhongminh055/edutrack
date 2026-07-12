@@ -66,7 +66,7 @@ async function exportAllToMySql() {
           [doc.id, data.email || null, data.fullName || 'Chưa cập nhật', data.studentId || 'Chưa có', data.role || 'student', data.status || 'active', createdAt, data.major || 'Chưa phân loại', JSON.stringify(data)]
         );
       }
-    } 
+    }
     else if (colName === 'available_courses') {
       await conn.query(`
         CREATE TABLE IF NOT EXISTS AvailableCourses (

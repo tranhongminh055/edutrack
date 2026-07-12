@@ -1051,7 +1051,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   dayOfWeek: data['dayOfWeek'] ?? 2,
                   startHour: (data['startHour'] as num?)?.toDouble() ?? 7.0,
                   duration: (data['duration'] as num?)?.toDouble() ?? 2.0,
-                  color: Color(data['colorValue'] ?? Colors.blue.value),
+                  color: Color(Colors.primaries[(data['courseName']?.toString() ?? '').hashCode.abs() % Colors.primaries.length].value),
                 );
               }).toList();
 
@@ -1172,7 +1172,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             'duration': duration,
             'lecturerEmail': lecturerEmail,
             'studentClass': studentClass,
-            'colorValue': Colors.primaries[dayOfWeek % Colors.primaries.length].value,
+            'colorValue': Colors.primaries[courseName.hashCode.abs() % Colors.primaries.length].value,
           });
         }
         
@@ -3963,6 +3963,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final proofUrl = data['proofUrl'] as String?;
     final isPaid = status == 'paid';
     final isPending = status == 'pending_verification';
+    final paidAmount = data['paidAmount'] as int? ?? (isPaid ? total : 0);
+    final remainingAmount = data['remainingAmount'] as int? ?? (isPaid ? 0 : total);
     
     if (origCredits == 0 && origCourses == 0 && coursesList.isNotEmpty) {
       origCourses = coursesList.length;
@@ -4030,7 +4032,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   children: [
                     Text('${_formatCurrency(total)} đ', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 4),
-                    Text('$credits TC | $courses môn', style: const TextStyle(color: Colors.white30, fontSize: 11)),
+                    Text('Còn nợ: ${_formatCurrency(remainingAmount)} đ', style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ],
@@ -4075,6 +4077,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         Text('${_formatCurrency(data['baseFee'] ?? 0)} đ', style: const TextStyle(color: Colors.white38, fontSize: 12)),
                       ],
                     ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Tổng tiền đã nộp:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('${_formatCurrency(paidAmount)} đ', style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Tổng tiền còn nợ:', style: TextStyle(color: Colors.white54, fontSize: 13, fontWeight: FontWeight.bold)),
+                        Text('${_formatCurrency(remainingAmount)} đ', style: const TextStyle(color: Colors.redAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                     const SizedBox(height: 12),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -4113,10 +4131,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         const SizedBox(width: 8),
                         ElevatedButton.icon(
                           onPressed: () async {
+                            final updatedCourses = coursesList.map((c) {
+                              final courseData = Map<String, dynamic>.from(c as Map<String, dynamic>);
+                              courseData['status'] = isPaid ? 'unpaid' : 'paid';
+                              return courseData;
+                            }).toList();
+
                             await doc.reference.update({
                               'status': isPaid ? 'unpaid' : 'paid',
                               'paymentMethod': isPaid ? null : 'admin_manual',
                               'paymentDate': isPaid ? null : FieldValue.serverTimestamp(),
+                              'courses': updatedCourses,
+                              'baseFeeStatus': isPaid ? 'unpaid' : 'paid',
+                              'paidAmount': isPaid ? 0 : total,
+                              'remainingAmount': isPaid ? total : 0,
                             });
                           },
                           icon: Icon(isPaid ? Icons.undo : Icons.check, size: 14),
