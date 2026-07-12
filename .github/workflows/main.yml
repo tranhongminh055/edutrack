@@ -27,7 +27,7 @@ jobs:
       - run: flutter pub get > pub_log.txt 2>&1
         continue-on-error: true
 
-      - run: flutter build apk > build_log.txt 2>&1
+      - run: flutter build web > build_log.txt 2>&1
         continue-on-error: true
 
       - name: Report failure log
