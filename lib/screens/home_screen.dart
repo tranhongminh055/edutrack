@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
+import 'dart:js_interop';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
@@ -26,6 +28,9 @@ import 'lecturer_dashboard.dart';
 import 'admin_dashboard.dart';
 import 'welcome_screen.dart';
 import 'elearning/elearning_dashboard.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 class HomeScreen extends StatefulWidget {
   final UserRole role;
@@ -100,7 +105,10 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Map<String, dynamic>> _tuitionCourses = [];
   bool _isLoadingTuition = false;
   int _totalTuition = 0;
+  int _paidAmount = 0;
+  int _remainingAmount = 0;
   int _baseFee = 0;
+  String _baseFeeStatus = 'unpaid';
   int _studentTuitionTab = 0; // 0: Hóa đơn học phí, 1: Lịch sử nộp học phí
   bool _isSimulatingPayment = false;
   String _tuitionStatus = 'unpaid';
@@ -134,6 +142,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Stream<QuerySnapshot>? _tuitionHistoryStream;
   Stream<QuerySnapshot>? _digitalInvoicesStream;
+
+  final ScrollController _tuitionScrollController = ScrollController();
 
   @override
   void initState() {
@@ -272,6 +282,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _classController.dispose();
     _batchController.dispose();
     _evalCommentController.dispose();
+    _tuitionScrollController.dispose();
     super.dispose();
   }
 
@@ -766,7 +777,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 20),
                     ],
-                    _buildInfoRow('Họ và tên', _fullNameController, 'Mã số SV', _idController),
+                    _buildInfoRow('Họ và tên', _fullNameController, 'Mã số SV', _idController, isSecondFixed: true),
                     const SizedBox(height: 16),
                     Divider(color: Colors.white.withOpacity(0.1), height: 1),
                     const SizedBox(height: 16),
@@ -1314,7 +1325,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Icon(Icons.notifications_off, size: 48, color: Colors.white.withOpacity(0.3)),
                         const SizedBox(height: 16),
-                        Text('Chưa có thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
+                        Text('Hiện tại chưa có thông báo nào', style: TextStyle(color: Colors.white.withOpacity(0.5))),
                       ],
                     ),
                   ),
@@ -1326,50 +1337,62 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showNotificationDetail(AppNotification n) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: const Color(0xFF1a2a1f),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 500),
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.campaign, color: n.isFromLecturer ? AppColors.lecturerColor : AppColors.studentColor, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(n.title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                  ),
-                  IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(ctx)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Icon(Icons.person_outline, size: 14, color: Colors.white.withOpacity(0.5)),
-                  const SizedBox(width: 4),
-                  Text(n.sender, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
-                  const SizedBox(width: 16),
-                  Icon(Icons.access_time, size: 14, color: Colors.white.withOpacity(0.5)),
-                  const SizedBox(width: 4),
-                  Text(n.date, style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13)),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Divider(color: Colors.white.withOpacity(0.1)),
-              const SizedBox(height: 16),
-              Text(n.content ?? 'Không có nội dung chi tiết.', style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.7)),
-            ],
-          ),
-        ),
+  Future<Uint8List> _generateNotificationPdf(AppNotification n, PdfPageFormat format) async {
+    final pdf = pw.Document();
+    
+    final font = await PdfGoogleFonts.robotoRegular();
+    final fontBold = await PdfGoogleFonts.robotoBold();
+
+    pdf.addPage(
+      pw.Page(
+        pageFormat: format,
+        build: (context) {
+          return pw.Padding(
+            padding: const pw.EdgeInsets.all(32),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  n.title,
+                  style: pw.TextStyle(font: fontBold, fontSize: 24, color: PdfColors.black),
+                ),
+                pw.SizedBox(height: 16),
+                pw.Row(
+                  children: [
+                    pw.Text('Người gửi: ${n.sender}', style: pw.TextStyle(font: font, fontSize: 14, color: PdfColors.grey700)),
+                    pw.SizedBox(width: 24),
+                    pw.Text('Thời gian: ${n.date}', style: pw.TextStyle(font: font, fontSize: 14, color: PdfColors.grey700)),
+                  ],
+                ),
+                pw.SizedBox(height: 24),
+                pw.Divider(color: PdfColors.grey300),
+                pw.SizedBox(height: 24),
+                pw.Text(
+                  n.content ?? 'Không có nội dung chi tiết.',
+                  style: pw.TextStyle(font: font, fontSize: 14, lineSpacing: 1.5),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
+    return pdf.save();
+  }
+
+  void _showNotificationDetail(AppNotification n) async {
+    try {
+      final pdfBytes = await _generateNotificationPdf(n, PdfPageFormat.a4);
+      final blob = web.Blob([pdfBytes.toJS].toJS, web.BlobPropertyBag(type: 'application/pdf'));
+      final url = web.URL.createObjectURL(blob);
+      web.window.open(url, '_blank');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Lỗi tạo PDF: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   Widget _buildNotificationItem(String title, String sender, String date, {bool isNew = false, bool isFromLecturer = false, VoidCallback? onTap}) {
@@ -1467,7 +1490,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Expanded(
           child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance.collection('schedules').snapshots(),
+            stream: _regService.getAllMyRegistrationsStream(FirebaseAuth.instance.currentUser?.uid ?? ''),
             builder: (context, snapshot) {
               // Only show loading on initial load, not on stream updates
               if (!snapshot.hasData && snapshot.connectionState == ConnectionState.waiting) {
@@ -1487,7 +1510,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   dayOfWeek: data['dayOfWeek'] ?? 2,
                   startHour: (data['startHour'] as num?)?.toDouble() ?? 7.0,
                   duration: (data['duration'] as num?)?.toDouble() ?? 2.0,
-                  color: Color(data['colorValue'] ?? Colors.blue.value),
+                  color: Color(Colors.primaries[(data['courseName']?.toString() ?? '').hashCode.abs() % Colors.primaries.length].value),
                 );
               }).toList();
 
@@ -1939,7 +1962,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             DataCell(
                               TextButton.icon(
-                                onPressed: () => _confirmCancelRegistration(doc.id, d['courseDocId'], d['courseName']),
+                                onPressed: () => _confirmCancelRegistration(doc.id, d['courseDocId'], d['courseName'], d['courseId'] ?? ''),
                                 icon: const Icon(Icons.cancel, color: Colors.redAccent, size: 16),
                                 label: const Text('Hủy ĐK', style: TextStyle(color: Colors.redAccent)),
                               ),
@@ -1979,13 +2002,190 @@ class _HomeScreenState extends State<HomeScreen> {
 
       Navigator.pop(context); // close loading
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Đăng ký môn ${courseData['courseName']} thành công!'), backgroundColor: Colors.green));
+      
+      // Tự động cập nhật học phí sau khi đăng ký
+      _updateTuitionAfterRegistration();
     } catch (e) {
       Navigator.pop(context); // close loading
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
     }
   }
 
-  void _confirmCancelRegistration(String regId, String courseDocId, String courseName) {
+  /// Tự động cập nhật hóa đơn học phí dựa trên các môn đã đăng ký hiện tại
+  Future<void> _updateTuitionAfterRegistration() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final semester = _studentRegSemester;
+      final academicYear = _studentRegYear;
+
+      // Lấy tất cả môn đã đăng ký trong học kỳ này
+      final regsSnapshot = await FirebaseFirestore.instance
+          .collection('registrations')
+          .where('userId', isEqualTo: user.uid)
+          .where('semester', isEqualTo: semester)
+          .where('academicYear', isEqualTo: academicYear)
+          .get();
+
+      if (regsSnapshot.docs.isEmpty) {
+        // Nếu không còn môn nào, xóa hóa đơn học phí
+        final invoiceDocId = '${user.uid}_${academicYear}_$semester'.replaceAll(' ', '_');
+        await FirebaseFirestore.instance.collection('tuition_fees').doc(invoiceDocId).delete();
+        return;
+      }
+
+      // Lấy đơn giá từ tuition_rates (nếu có)
+      final ratesSnapshot = await FirebaseFirestore.instance
+          .collection('tuition_rates')
+          .where('academicYear', isEqualTo: academicYear)
+          .where('semester', isEqualTo: semester)
+          .get();
+
+      final rates = <String, Map<String, int>>{};
+      for (var doc in ratesSnapshot.docs) {
+        final data = doc.data();
+        rates[data['major'] ?? ''] = {
+          'creditRate': data['creditRate'] ?? 450000,
+          'courseRate': data['courseRate'] ?? 150000,
+          'baseFee': data['baseFee'] ?? 1000000,
+        };
+      }
+
+      Map<String, int> getRates(String? major) {
+        final m = major ?? 'Mặc định';
+        if (rates.containsKey(m)) return rates[m]!;
+        if (rates.containsKey('Mặc định')) return rates['Mặc định']!;
+        return {'creditRate': 450000, 'courseRate': 150000, 'baseFee': 1000000};
+      }
+
+      // Lấy thông tin ngành của sinh viên
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      final studentMajor = userDoc.data()?['major'] ?? 'Mặc định';
+      final studentName = userDoc.data()?['fullName'] ?? _fullNameController.text;
+      final studentEmail = userDoc.data()?['email'] ?? _emailController.text;
+      final studentCardId = userDoc.data()?['studentId'] ?? _idController.text;
+
+      final studentRates = getRates(studentMajor);
+      final cRate = studentRates['creditRate']!;
+      final coRate = studentRates['courseRate']!;
+      final bFee = studentRates['baseFee']!;
+
+      final invoiceDocId = '${user.uid}_${academicYear}_$semester'.replaceAll(' ', '_');
+
+      // Kiểm tra trạng thái hiện tại của hóa đơn và các môn học
+      final existingDoc = await FirebaseFirestore.instance.collection('tuition_fees').doc(invoiceDocId).get();
+      final existingData = existingDoc.data() ?? {};
+      final currentStatus = existingData['status'] ?? 'unpaid';
+      final existingCourses = (existingData['courses'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+      
+      // Tạo map trạng thái môn học cũ để giữ lại trạng thái thanh toán
+      final Map<String, String> existingCourseStatus = {};
+      for (var ec in existingCourses) {
+        existingCourseStatus[ec['courseId'] as String] = ec['status'] as String? ?? 'unpaid';
+      }
+      
+      // Khả năng tương thích với dữ liệu cũ (khi hóa đơn đã thanh toán nhưng môn chưa có trường status)
+      bool legacyAllPaid = currentStatus == 'paid';
+
+      int totalCredits = 0;
+      final coursesList = <Map<String, dynamic>>[];
+      int paidAmount = 0;
+
+      for (var regDoc in regsSnapshot.docs) {
+        final regData = regDoc.data();
+        final cCredits = (regData['credits'] as num?)?.toInt() ?? 3;
+        final courseName = regData['courseName'] ?? 'N/A';
+        final courseId = regData['courseId'] ?? 'N/A';
+        totalCredits += cCredits;
+
+        final courseTuition = (cCredits * cRate) + coRate;
+        
+        // Xác định trạng thái của môn này (Giữ nguyên Đã nộp nếu có)
+        String cStatus = 'unpaid';
+        if (existingCourseStatus.containsKey(courseId)) {
+          cStatus = existingCourseStatus[courseId]!;
+        } else if (legacyAllPaid) {
+          cStatus = 'paid';
+        }
+
+        if (cStatus == 'paid') {
+          paidAmount += courseTuition;
+        }
+
+        coursesList.add({
+          'courseId': courseId,
+          'courseName': courseName,
+          'credits': cCredits,
+          'tuition': courseTuition,
+          'status': cStatus, // Thêm trường status cho từng môn
+        });
+      }
+
+      // Phí cơ bản
+      String baseFeeStatus = existingData['baseFeeStatus'] as String? ?? (legacyAllPaid ? 'paid' : 'unpaid');
+      if (baseFeeStatus == 'paid') {
+        paidAmount += bFee;
+      }
+
+      final int totalTuition = (totalCredits * cRate) + (regsSnapshot.docs.length * coRate) + bFee;
+      final int remainingAmount = totalTuition - paidAmount;
+
+      // Cập nhật lại trạng thái hóa đơn dựa trên số tiền còn nợ
+      final newStatus = (remainingAmount <= 0) ? 'paid' : 'unpaid';
+
+      await FirebaseFirestore.instance.collection('tuition_fees').doc(invoiceDocId).set({
+        'studentId': user.uid,
+        'studentName': studentName,
+        'studentEmail': studentEmail,
+        'studentCardId': studentCardId,
+        'major': studentMajor,
+        'academicYear': academicYear,
+        'semester': semester,
+        'creditsCount': totalCredits,
+        'coursesCount': regsSnapshot.docs.length,
+        'baseFee': bFee,
+        'baseFeeStatus': baseFeeStatus,
+        'courses': coursesList,
+        'totalAmount': totalTuition,
+        'paidAmount': paidAmount,
+        'remainingAmount': remainingAmount,
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+    } catch (e) {
+      debugPrint('Lỗi cập nhật học phí: $e');
+    }
+  }
+
+  void _confirmCancelRegistration(String regId, String courseDocId, String courseName, String courseId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final invoiceDocId = '${user.uid}_${_studentRegYear}_$_studentRegSemester'.replaceAll(' ', '_');
+      final invoiceDoc = await FirebaseFirestore.instance.collection('tuition_fees').doc(invoiceDocId).get();
+      if (invoiceDoc.exists) {
+        final existingData = invoiceDoc.data()!;
+        final courses = (existingData['courses'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+        final courseData = courses.firstWhere((c) => c['courseId'] == courseId, orElse: () => <String, dynamic>{});
+        
+        bool isPaid = false;
+        if (courseData.isNotEmpty && courseData['status'] == 'paid') {
+          isPaid = true;
+        } else if (existingData['status'] == 'paid' && courseData.isNotEmpty && courseData['status'] == null) {
+          isPaid = true; // Legacy
+        }
+
+        if (isPaid) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Không thể hủy môn học đã thanh toán học phí! Vui lòng liên hệ Phòng Đào Tạo.'), backgroundColor: Colors.red));
+          }
+          return;
+        }
+      }
+    }
+
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2002,6 +2202,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 await _regService.cancelRegistration(regId, courseDocId);
                 Navigator.pop(context); // close loading
                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã hủy đăng ký thành công!'), backgroundColor: Colors.green));
+                // Tự động cập nhật lại học phí sau khi hủy đăng ký
+                _updateTuitionAfterRegistration();
               } catch (e) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e'), backgroundColor: Colors.red));
@@ -3367,10 +3569,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 7: Học phí
   Widget _buildTuitionContent() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
+    return Scrollbar(
+      controller: _tuitionScrollController,
+      thumbVisibility: true,
+      thickness: 8.0,
+      radius: const Radius.circular(4.0),
+      child: SingleChildScrollView(
+        controller: _tuitionScrollController,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          Container(
           width: double.infinity,
           decoration: BoxDecoration(
             color: Colors.white,
@@ -3429,6 +3640,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ],
+    ),
+    ),
     );
   }
 
@@ -3593,6 +3806,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ...List.generate(_tuitionCourses.length, (idx) {
               final course = _tuitionCourses[idx];
+              final bool isCoursePaid = course['status'] == 'paid' || (_tuitionStatus == 'paid' && course['status'] == null);
               return TableRow(
                 children: [
                   _tableCell((idx + 1).toString(), align: Alignment.center),
@@ -3600,26 +3814,75 @@ class _HomeScreenState extends State<HomeScreen> {
                   _tableCell(course['courseName'] ?? 'N/A'),
                   _tableCell(course['credits']?.toString() ?? '0', align: Alignment.center),
                   _tableCell(_formatCurrency(course['tuition'] ?? 0), align: Alignment.centerRight),
-                  _tableCell(isPaid ? 'Đã nộp' : 'Chưa nộp', 
+                  _tableCell(isCoursePaid ? 'Đã nộp' : 'Chưa nộp', 
                     align: Alignment.center,
-                    textColor: isPaid ? Colors.green : Colors.red,
+                    textColor: isCoursePaid ? Colors.green : Colors.red,
                     fontWeight: FontWeight.bold,
                   ),
                 ],
               );
             }),
+            TableRow(
+              children: [
+                _tableCell(''),
+                _tableCell(''),
+                _tableCell('Phụ phí kỳ học (Base Fee)', fontWeight: FontWeight.bold),
+                _tableCell(''),
+                _tableCell(_formatCurrency(_baseFee), align: Alignment.centerRight, fontWeight: FontWeight.bold),
+                _tableCell(_baseFeeStatus == 'paid' || _tuitionStatus == 'paid' ? 'Đã nộp' : 'Chưa nộp', 
+                  align: Alignment.center, 
+                  textColor: _baseFeeStatus == 'paid' || _tuitionStatus == 'paid' ? Colors.green : Colors.red, 
+                  fontWeight: FontWeight.bold
+                ),
+              ]
+            ),
           ],
         ),
         const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('TỔNG CỘNG:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black54)),
+                  Text('${_formatCurrency(_totalTuition)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('ĐÃ NỘP:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black54)),
+                  Text('${_formatCurrency(_paidAmount)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.green)),
+                ],
+              ),
+              const Divider(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('CẦN THANH TOÁN:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
+                  Text('${_formatCurrency(_remainingAmount)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.red)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            Text('TỔNG CỘNG: ${_formatCurrency(_totalTuition)} VNĐ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.red)),
-            if (!isPaid)
+            if (_remainingAmount > 0)
               ElevatedButton(
                 onPressed: () {
                   final invoiceDocId = _currentInvoiceDocId ?? '${FirebaseAuth.instance.currentUser?.uid}_${_selectedTuitionYear}_${_selectedTuitionSemester}'.replaceAll(' ', '_');
-                  _showQrPaymentDialog(context, _totalTuition, invoiceDocId);
+                  _showQrPaymentDialog(context, _remainingAmount, invoiceDocId);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFC00000),
@@ -4578,7 +4841,10 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _tuitionCourses = [];
             _totalTuition = 0;
+            _paidAmount = 0;
+            _remainingAmount = 0;
             _baseFee = 0;
+            _baseFeeStatus = 'unpaid';
             _tuitionStatus = 'unpaid';
             _paymentMethod = null;
             _paymentDate = null;
@@ -4596,15 +4862,22 @@ class _HomeScreenState extends State<HomeScreen> {
       final courses = tuitionData['courses'] as List<dynamic>? ?? [];
       final total = tuitionData['totalAmount'] as int? ?? 0;
       final bFee = tuitionData['baseFee'] as int? ?? 0;
+      final bFeeStatus = tuitionData['baseFeeStatus'] as String? ?? 'unpaid';
       final status = tuitionData['status'] ?? 'unpaid';
       final pMethod = tuitionData['paymentMethod'] as String?;
       final pDate = (tuitionData['paymentDate'] as Timestamp?)?.toDate();
+      
+      final pAmount = tuitionData['paidAmount'] as int? ?? (status == 'paid' ? total : 0);
+      final rAmount = tuitionData['remainingAmount'] as int? ?? (status == 'paid' ? 0 : total);
 
       if (mounted) {
         setState(() {
           _tuitionCourses = courses.cast<Map<String, dynamic>>();
           _totalTuition = total;
+          _paidAmount = pAmount;
+          _remainingAmount = rAmount;
           _baseFee = bFee;
+          _baseFeeStatus = bFeeStatus;
           _tuitionStatus = status;
           _paymentMethod = pMethod;
           _paymentDate = pDate;

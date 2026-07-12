@@ -1,0 +1,13 @@
+Mã Môn,Tên Môn,Số Tín Chỉ,Mã Lớp,Tên Giảng Viên,Email Giảng Viên,Sĩ Số Tối Đa,Thứ,Giờ Bắt Đầu,Số Giờ Học,Phòng Học
+SE101,Nhập môn Lập trình,3,SE101-A,Đào Quang Minh,minhdq@edutrack.edu.vn,40,2,7.0,3.0,A101
+SE102,Cơ sở dữ liệu,3,SE102-A,Giảng Viên 1,gv@edutrack.edu.vn,40,3,13.5,2.0,A102
+SE103,Kỹ thuật phần mềm,4,SE103-A,Đào Quang Minh,minhdq@edutrack.edu.vn,35,4,7.0,4.0,B201
+MA101,Toán cao cấp,3,MA101-A,Giảng Viên Toán,toan@edutrack.edu.vn,50,5,9.0,3.0,C301
+BA101,Kinh tế vi mô,3,BA101-A,Giảng Viên KT,kinhte@edutrack.edu.vn,40,2,13.5,3.0,D101
+BA102,Quản trị học,3,BA102-A,Giảng Viên QT,quantri@edutrack.edu.vn,40,3,7.0,2.0,D102
+SE104,Mạng máy tính,3,SE104-A,Giảng Viên 1,gv@edutrack.edu.vn,40,6,13.5,3.0,A105
+SE105,Cấu trúc dữ liệu,3,SE105-A,Đào Quang Minh,minhdq@edutrack.edu.vn,35,7,7.0,3.0,A101
+EN101,Tiếng Anh 1,2,EN101-A,Giảng Viên TA,english@edutrack.edu.vn,40,4,13.5,2.0,E101
+SE106,Lập trình Web,3,SE106-A,Đào Quang Minh,minhdq@edutrack.edu.vn,40,5,13.5,3.0,A202
+SE107,Trí tuệ nhân tạo,3,SE107-A,Giảng Viên AI,ai@edutrack.edu.vn,35,6,7.0,3.0,B101
+BA103,Marketing căn bản,3,BA103-A,Giảng Viên MKT,marketing@edutrack.edu.vn,40,7,13.5,2.0,D105

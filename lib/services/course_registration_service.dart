@@ -42,6 +42,14 @@ class CourseRegistrationService {
         .snapshots();
   }
 
+  /// Stream TẤT CẢ môn đã đăng ký của 1 sinh viên (không phân biệt học kỳ)
+  Stream<QuerySnapshot> getAllMyRegistrationsStream(String userId) {
+    return _firestore
+        .collection('registrations')
+        .where('userId', isEqualTo: userId)
+        .snapshots();
+  }
+
   /// Stream tất cả đăng ký (cho Admin theo dõi)
   Stream<QuerySnapshot> getAllRegistrationsStream({String? semester, String? academicYear}) {
     Query query = _firestore.collection('registrations');
@@ -80,6 +88,27 @@ class CourseRegistrationService {
   }) async {
     final courseDocId = courseData['docId'] as String;
     final courseRef = _firestore.collection('available_courses').doc(courseDocId);
+
+    // Pre-check total credits for the current semester
+    final semester = courseData['semester'];
+    final academicYear = courseData['academicYear'];
+    final courseCredits = (courseData['credits'] as num?)?.toInt() ?? 0;
+
+    final currentRegsSnapshot = await _firestore
+        .collection('registrations')
+        .where('userId', isEqualTo: userId)
+        .where('semester', isEqualTo: semester)
+        .where('academicYear', isEqualTo: academicYear)
+        .get();
+
+    int totalCredits = courseCredits;
+    for (var regDoc in currentRegsSnapshot.docs) {
+      totalCredits += (regDoc.data()['credits'] as num?)?.toInt() ?? 0;
+    }
+
+    if (totalCredits > 25) {
+      throw Exception('Bạn đã đăng ký tối đa 25 tín chỉ cho học kỳ này');
+    }
 
     return await _firestore.runTransaction<String>((transaction) async {
       final courseSnapshot = await transaction.get(courseRef);
