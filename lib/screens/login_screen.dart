@@ -230,6 +230,11 @@ class _LoginScreenState extends State<LoginScreen>
       prefs.remove('lockTime');
       _failedAttempts = 0;
 
+      // Cập nhật thời gian đăng nhập
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).update({
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+
       setState(() => _isLoading = false);
 
       if (mounted) {

@@ -34,6 +34,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '17492164047',
     projectId: 'edu---track',
     authDomain: 'edu---track.firebaseapp.com',
+    databaseURL: 'https://edu---track-default-rtdb.firebaseio.com',
     storageBucket: 'edu---track.firebasestorage.app',
     measurementId: 'G-Z4EBNPSJ55',
   );

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_database/firebase_database.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:csv/csv.dart';
@@ -1805,21 +1805,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
     final isLocked = status == 'locked';
     final userId = user['id']?.toString();
 
-    return StreamBuilder<DatabaseEvent>(
-      stream: FirebaseDatabase.instance.ref('users/$userId/lastLogin').onValue,
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(userId).snapshots(),
       builder: (context, snapshot) {
         String lastLoginText = 'Chưa đăng nhập';
-        if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
-          final val = snapshot.data!.snapshot.value;
-          int? timestamp;
-          if (val is num) {
-            timestamp = val.toInt();
-          } else if (val is String) {
-            timestamp = int.tryParse(val);
-          }
-          if (timestamp != null) {
-            final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-            lastLoginText = '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+        if (snapshot.hasData && snapshot.data!.exists) {
+          final data = snapshot.data!.data() as Map<String, dynamic>?;
+          if (data != null && data['lastLoginAt'] != null) {
+            final val = data['lastLoginAt'];
+            if (val is Timestamp) {
+              final date = val.toDate();
+              lastLoginText = '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
+            }
           }
         }
 
