@@ -614,7 +614,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                         ),
                         const SizedBox(height: 20),
                       ],
-                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số / ID', _idController),
+                      _buildInfoRow('Họ và tên', _fullNameController, 'Mã số / ID', _idController, isSecondFixed: true),
                       const SizedBox(height: 16),
                       Divider(color: Colors.white.withValues(alpha: 0.1), height: 1),
                       const SizedBox(height: 16),

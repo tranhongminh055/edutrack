@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
@@ -258,7 +259,7 @@ class _LoginScreenState extends State<LoginScreen>
         await _incrementFailedAttempt();
       }
       
-      if (mounted) {
+      if (mounted && _lockTime == null) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.red.shade700,
@@ -277,10 +278,20 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: NatureBackground(
+      body: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.enter): () {
+            if (!_isLoading && _lockTime == null) _handleLogin();
+          },
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+            if (!_isLoading && _lockTime == null) _handleLogin();
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: NatureBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -503,6 +514,7 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           child: TextFormField(
             controller: controller,
+            enabled: _lockTime == null,
             obscureText: isPassword && _obscureText,
             keyboardType: keyboardType,
             textInputAction: textInputAction,
@@ -691,10 +703,12 @@ class _LoginScreenState extends State<LoginScreen>
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
+        onPressed: (_isLoading || _lockTime != null) ? null : _handleLogin,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primaryBlue,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey.shade400,
+          disabledForegroundColor: Colors.white70,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 0,
         ),
@@ -703,7 +717,8 @@ class _LoginScreenState extends State<LoginScreen>
                 width: 24, height: 24,
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
               )
-            : const Text('Đăng nhập', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+            : Text(_lockTime != null ? _countdownText : 'Đăng nhập', 
+                style: TextStyle(fontSize: _lockTime != null ? 13 : 15, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
       ),
     );
   }
