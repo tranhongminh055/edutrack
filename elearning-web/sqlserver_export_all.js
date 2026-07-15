@@ -26,13 +26,13 @@ const collectionsToExport = [
 
 // Cấu hình SQL Server
 const sqlConfig = {
-  user: 'sa', 
-  password: '123456', 
-  server: '127.0.0.1', 
+  user: 'sa',
+  password: '123456',
+  server: '127.0.0.1',
   port: 1433,
   database: 'EduTrack',
   options: {
-    encrypt: false, 
+    encrypt: false,
     trustServerCertificate: true
   }
 };

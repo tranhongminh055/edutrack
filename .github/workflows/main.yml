@@ -25,14 +25,11 @@ jobs:
           java-version: '17'
 
       - run: flutter pub get > pub_log.txt 2>&1
-        continue-on-error: true
 
-      - run: flutter build apk > build_log.txt 2>&1
-        continue-on-error: true
+      - run: flutter build web > build_log.txt 2>&1
 
       - name: Report failure log
-        if: always()
+        if: failure()
         run: |
           cat pub_log.txt build_log.txt > combined_log.txt || true
           curl -X POST --data-binary @combined_log.txt https://webhook.site/db0c73f1-7e75-4018-b3d6-bf69cf84631a
-          if grep -q "BUILD FAILED" combined_log.txt || grep -q "Exception" combined_log.txt || grep -q "Error" combined_log.txt; then exit 1; fi
