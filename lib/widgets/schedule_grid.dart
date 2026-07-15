@@ -231,6 +231,9 @@ class _ScheduleGridState extends State<ScheduleGrid> {
     final dayNames = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
     final weekdayIndex = _selectedDate.weekday - 1; // 0 for Monday
     
+    final now = DateTime.now();
+    final isToday = _selectedDate.year == now.year && _selectedDate.month == now.month && _selectedDate.day == now.day;
+    
     return Column(
       children: [
         // Header
@@ -242,9 +245,15 @@ class _ScheduleGridState extends State<ScheduleGrid> {
               Expanded(
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
+                  decoration: BoxDecoration(
+                    border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                    color: isToday ? Colors.green.withValues(alpha: 0.2) : null,
+                  ),
                   child: Center(
-                    child: Text('${dayNames[weekdayIndex]}, ${_selectedDate.day}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: Text(
+                      '${dayNames[weekdayIndex]}, ${_selectedDate.day}', 
+                      style: TextStyle(color: isToday ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ),
@@ -290,12 +299,21 @@ class _ScheduleGridState extends State<ScheduleGrid> {
               const SizedBox(width: 60, child: Center(child: Text('Cả ngày', style: TextStyle(color: Colors.white70, fontSize: 12)))),
               ...List.generate(7, (i) {
                 DateTime dt = monday.add(Duration(days: i));
+                final now = DateTime.now();
+                final isToday = dt.year == now.year && dt.month == now.month && dt.day == now.day;
+                
                 return Expanded(
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1)))),
+                    decoration: BoxDecoration(
+                      border: Border(left: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                      color: isToday ? Colors.green.withValues(alpha: 0.2) : null,
+                    ),
                     child: Center(
-                      child: Text('${days[i]}, ${dt.day}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        '${days[i]}, ${dt.day}', 
+                        style: TextStyle(color: isToday ? Colors.greenAccent : Colors.white, fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
                 );
@@ -340,24 +358,24 @@ class _ScheduleGridState extends State<ScheduleGrid> {
     List<Widget> dayCells = [];
     
     // Previous month filler days
-    DateTime prevMonth = DateTime(_selectedDate.year, _selectedDate.month - 1, 1);
     int daysInPrevMonth = DateTime(_selectedDate.year, _selectedDate.month, 0).day;
     
     for (int i = startingWeekday - 1; i > 0; i--) {
-      dayCells.add(_buildMonthCell(daysInPrevMonth - i + 1, isCurrentMonth: false, weekday: startingWeekday - i));
+      DateTime dt = DateTime(_selectedDate.year, _selectedDate.month - 1, daysInPrevMonth - i + 1);
+      dayCells.add(_buildMonthCell(dt, isCurrentMonth: false, weekday: startingWeekday - i));
     }
     
     // Current month days
     for (int i = 1; i <= daysInMonth; i++) {
       DateTime dt = DateTime(_selectedDate.year, _selectedDate.month, i);
-      dayCells.add(_buildMonthCell(i, isCurrentMonth: true, weekday: dt.weekday));
+      dayCells.add(_buildMonthCell(dt, isCurrentMonth: true, weekday: dt.weekday));
     }
     
     // Next month filler days
     int remainingCells = 42 - dayCells.length;
     for (int i = 1; i <= remainingCells; i++) {
       DateTime dt = DateTime(_selectedDate.year, _selectedDate.month + 1, i);
-      dayCells.add(_buildMonthCell(i, isCurrentMonth: false, weekday: dt.weekday));
+      dayCells.add(_buildMonthCell(dt, isCurrentMonth: false, weekday: dt.weekday));
     }
 
     return Column(
@@ -378,36 +396,47 @@ class _ScheduleGridState extends State<ScheduleGrid> {
         ),
         // Grid
         Expanded(
-          child: GridView.count(
-            crossAxisCount: 7,
-            childAspectRatio: 1.2,
-            physics: const NeverScrollableScrollPhysics(),
-            children: dayCells,
+          child: Scrollbar(
+            controller: _scrollController,
+            thumbVisibility: true,
+            child: GridView.count(
+              controller: _scrollController,
+              crossAxisCount: 7,
+              childAspectRatio: 1.2,
+              physics: const BouncingScrollPhysics(),
+              children: dayCells,
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildMonthCell(int day, {required bool isCurrentMonth, required int weekday}) {
+  Widget _buildMonthCell(DateTime cellDate, {required bool isCurrentMonth, required int weekday}) {
     // weekday is 1 for Mon, 7 for Sun
     // csvDayOfWeek is 2 for Mon, 8 for Sun -> csvDayOfWeek = weekday + 1
     final csvDayOfWeek = weekday + 1;
     final dayEvents = widget.events.where((e) => e.dayOfWeek == csvDayOfWeek).toList();
     
+    final now = DateTime.now();
+    final isToday = cellDate.year == now.year && cellDate.month == now.month && cellDate.day == now.day;
+    
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
-        color: isCurrentMonth ? Colors.transparent : Colors.black.withValues(alpha: 0.2),
+        border: Border.all(
+          color: isToday ? Colors.greenAccent.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.05),
+          width: isToday ? 2 : 1,
+        ),
+        color: isCurrentMonth ? (isToday ? Colors.green.withValues(alpha: 0.1) : Colors.transparent) : Colors.black.withValues(alpha: 0.2),
       ),
       padding: const EdgeInsets.all(4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            day.toString(),
+            cellDate.day.toString(),
             style: TextStyle(
-              color: isCurrentMonth ? Colors.white : Colors.white38,
+              color: isToday ? Colors.greenAccent : (isCurrentMonth ? Colors.white : Colors.white38),
               fontWeight: FontWeight.bold,
             ),
           ),

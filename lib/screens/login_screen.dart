@@ -1,4 +1,7 @@
 import 'dart:ui';
+import 'dart:async';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/nature_background.dart';
@@ -36,6 +39,11 @@ class _LoginScreenState extends State<LoginScreen>
   bool _rememberMe = false;
   bool _obscureText = true;
 
+  int _failedAttempts = 0;
+  DateTime? _lockTime;
+  Timer? _countdownTimer;
+  String _countdownText = '';
+
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -56,10 +64,81 @@ class _LoginScreenState extends State<LoginScreen>
       begin: const Offset(0, 0.15), end: Offset.zero,
     ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic));
     _animCtrl.forward();
+    _loadLockState();
+  }
+
+  Future<void> _loadLockState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lockStr = prefs.getString('lockTime');
+    if (lockStr != null) {
+      final lockTime = DateTime.parse(lockStr);
+      if (DateTime.now().difference(lockTime).inMinutes < 5) {
+        setState(() {
+          _lockTime = lockTime;
+          _failedAttempts = prefs.getInt('failedAttempts') ?? 5;
+        });
+        _startTimer();
+      } else {
+        prefs.remove('lockTime');
+        prefs.remove('failedAttempts');
+      }
+    } else {
+      setState(() {
+        _failedAttempts = prefs.getInt('failedAttempts') ?? 0;
+      });
+    }
+  }
+
+  void _startTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_lockTime == null) {
+        timer.cancel();
+        return;
+      }
+      final diff = DateTime.now().difference(_lockTime!);
+      final remain = const Duration(minutes: 5) - diff;
+      if (remain.isNegative) {
+        timer.cancel();
+        setState(() {
+          _lockTime = null;
+          _failedAttempts = 0;
+          _countdownText = '';
+        });
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.remove('lockTime');
+          prefs.remove('failedAttempts');
+        });
+      } else {
+        final min = remain.inMinutes;
+        final sec = remain.inSeconds % 60;
+        setState(() {
+          _countdownText = 'Tài khoản bị khóa. Thử lại sau ${min.toString().padLeft(2, '0')}:${sec.toString().padLeft(2, '0')}';
+        });
+      }
+    });
+  }
+
+  Future<void> _incrementFailedAttempt() async {
+    _failedAttempts++;
+    final prefs = await SharedPreferences.getInstance();
+    prefs.setInt('failedAttempts', _failedAttempts);
+    if (_failedAttempts >= 5) {
+      _lockTime = DateTime.now();
+      prefs.setString('lockTime', _lockTime!.toIso8601String());
+      _startTimer();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Tài khoản đã bị khóa do nhập sai 5 lần!'),
+          backgroundColor: Colors.red,
+        ));
+      }
+    }
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _animCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
@@ -67,6 +146,15 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _handleLogin() async {
+    if (_lockTime != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(_countdownText),
+        backgroundColor: Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
     if (_selectedRole == null) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -138,6 +226,16 @@ class _LoginScreenState extends State<LoginScreen>
         throw Exception('Tài khoản của bạn đã bị khóa. Vui lòng liên hệ Admin.');
       }
 
+      final prefs = await SharedPreferences.getInstance();
+      prefs.remove('failedAttempts');
+      prefs.remove('lockTime');
+      _failedAttempts = 0;
+
+      // Cập nhật thời gian đăng nhập
+      await FirebaseFirestore.instance.collection('users').doc(userCredential.user!.uid).update({
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      });
+
       setState(() => _isLoading = false);
 
       if (mounted) {
@@ -155,11 +253,13 @@ class _LoginScreenState extends State<LoginScreen>
       String errorMessage = 'Đăng nhập thất bại';
       if (e.code == 'user-not-found' || e.code == 'invalid-email' || e.code == 'invalid-credential') {
         errorMessage = 'Email hoặc mật khẩu không chính xác';
+        await _incrementFailedAttempt();
       } else if (e.code == 'wrong-password') {
         errorMessage = 'Sai mật khẩu';
+        await _incrementFailedAttempt();
       }
       
-      if (mounted) {
+      if (mounted && _lockTime == null) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.red.shade700,
@@ -178,10 +278,20 @@ class _LoginScreenState extends State<LoginScreen>
     }
   }
 
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: NatureBackground(
+      body: CallbackShortcuts(
+        bindings: <ShortcutActivator, VoidCallback>{
+          const SingleActivator(LogicalKeyboardKey.enter): () {
+            if (!_isLoading && _lockTime == null) _handleLogin();
+          },
+          const SingleActivator(LogicalKeyboardKey.numpadEnter): () {
+            if (!_isLoading && _lockTime == null) _handleLogin();
+          },
+        },
+        child: Focus(
+          autofocus: true,
+          child: NatureBackground(
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
@@ -336,6 +446,7 @@ class _LoginScreenState extends State<LoginScreen>
               icon: Icons.person_outline,
               controller: _emailCtrl,
               keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
               validator: (v) {
                 if (v == null || v.trim().isEmpty) return 'Vui lòng nhập email hoặc mã số';
                 if (v.contains('@') && !RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) {
@@ -351,6 +462,8 @@ class _LoginScreenState extends State<LoginScreen>
               icon: Icons.lock_outline,
               controller: _passCtrl,
               isPassword: true,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _handleLogin(),
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Vui lòng nhập mật khẩu';
                 if (v.length < 6) return 'Mật khẩu phải có ít nhất 6 ký tự';
@@ -376,6 +489,8 @@ class _LoginScreenState extends State<LoginScreen>
     required TextEditingController controller,
     bool isPassword = false,
     TextInputType? keyboardType,
+    TextInputAction? textInputAction,
+    void Function(String)? onFieldSubmitted,
     String? Function(String?)? validator,
   }) {
     return Column(
@@ -399,8 +514,11 @@ class _LoginScreenState extends State<LoginScreen>
           ),
           child: TextFormField(
             controller: controller,
+            enabled: _lockTime == null,
             obscureText: isPassword && _obscureText,
             keyboardType: keyboardType,
+            textInputAction: textInputAction,
+            onFieldSubmitted: onFieldSubmitted,
             style: const TextStyle(color: Colors.black87, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,
@@ -585,10 +703,12 @@ class _LoginScreenState extends State<LoginScreen>
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : _handleLogin,
+        onPressed: (_isLoading || _lockTime != null) ? null : _handleLogin,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primaryBlue,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: Colors.grey.shade400,
+          disabledForegroundColor: Colors.white70,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           elevation: 0,
         ),
@@ -597,7 +717,8 @@ class _LoginScreenState extends State<LoginScreen>
                 width: 24, height: 24,
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
               )
-            : const Text('Đăng nhập', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+            : Text(_lockTime != null ? _countdownText : 'Đăng nhập', 
+                style: TextStyle(fontSize: _lockTime != null ? 13 : 15, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
       ),
     );
   }

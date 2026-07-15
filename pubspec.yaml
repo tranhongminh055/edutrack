@@ -18,15 +18,16 @@ dependencies:
   firebase_core: ^4.11.0
   firebase_auth: ^6.5.4
   cloud_firestore: ^6.6.0
-  firebase_database: ^12.4.0
   firebase_data_connect: any
   file_picker: ^11.0.2
   csv: ^8.0.0
   intl: ^0.20.3
   url_launcher: ^6.3.2
-  web: ^0.5.1
+  web: ^1.1.0
   firebase_storage: ^13.4.3
   http: ^1.6.0
+  pdf: ^3.11.1
+  printing: ^5.12.0
 
 dev_dependencies:
   flutter_test:
@@ -38,3 +39,4 @@ flutter:
 
   assets:
     - assets/images/
+    - assets/fonts/
