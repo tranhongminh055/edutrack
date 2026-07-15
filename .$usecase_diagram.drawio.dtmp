@@ -1,0 +1,128 @@
+<mxfile host="Electron">
+  <diagram name="Use Case Diagram" id="usecase1">
+    <mxGraphModel dx="1084" dy="659" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="actor_student" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;fontStyle=1;" value="Sinh Viên" vertex="1">
+          <mxGeometry height="60" width="40" x="30" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_lecturer" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;fontStyle=1;" value="Giảng Viên" vertex="1">
+          <mxGeometry height="60" width="40" x="30" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="actor_admin" parent="1" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=13;fontStyle=1;" value="Admin" vertex="1">
+          <mxGeometry height="60" width="40" x="30" y="660" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg1" parent="1" style="shape=rectangle;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#dae8fc;strokeColor=#6c8ebf;rounded=1;arcSize=5;" value="Hệ thống Xác thực &amp; Tài khoản" vertex="1">
+          <mxGeometry height="260" width="420" x="180" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_login" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Đăng nhập" vertex="1">
+          <mxGeometry height="50" width="140" x="210" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_profile" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Quản lý Hồ sơ" vertex="1">
+          <mxGeometry height="50" width="140" x="210" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_firebase" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" value="Xác thực&#xa;Firebase Auth" vertex="1">
+          <mxGeometry height="50" width="150" x="420" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_forgot" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Quên mật khẩu" vertex="1">
+          <mxGeometry height="50" width="150" x="420" y="130" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_manage_acc" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Duyệt / Khóa&#xa;Tài khoản" vertex="1">
+          <mxGeometry height="50" width="150" x="300" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="inc1" edge="1" parent="1" source="uc_login" style="html=1;dashed=1;endArrow=open;endSize=12;strokeColor=#b85450;fontColor=#b85450;fontSize=11;" target="uc_firebase">
+          <mxGeometry relative="1" as="geometry" />
+          <Array as="points" />
+        </mxCell>
+        <mxCell id="ext1" edge="1" parent="1" source="uc_forgot" style="html=1;dashed=1;endArrow=open;endSize=12;strokeColor=#82b366;fontColor=#82b366;fontSize=11;" target="uc_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg2" parent="1" style="shape=rectangle;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#d5e8d4;strokeColor=#82b366;rounded=1;arcSize=5;" value="Quản lý Học vụ &amp; Tài chính" vertex="1">
+          <mxGeometry height="260" width="420" x="180" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_register" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Đăng ký tín chỉ" vertex="1">
+          <mxGeometry height="50" width="140" x="210" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_calc" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" value="Tính toán học phí" vertex="1">
+          <mxGeometry height="50" width="150" x="420" y="350" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_pay" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Nộp biên lai&#xa;Học phí" vertex="1">
+          <mxGeometry height="50" width="140" x="210" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_upload" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f8cecc;strokeColor=#b85450;" value="Upload ảnh&#xa;biên lai" vertex="1">
+          <mxGeometry height="50" width="150" x="420" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_approve" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Duyệt trạng thái&#xa;Học phí" vertex="1">
+          <mxGeometry height="50" width="150" x="300" y="500" as="geometry" />
+        </mxCell>
+        <mxCell id="inc2" edge="1" parent="1" source="uc_register" style="html=1;dashed=1;endArrow=open;endSize=12;strokeColor=#b85450;fontColor=#b85450;fontSize=11;" target="uc_calc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="inc3" edge="1" parent="1" source="uc_pay" style="html=1;dashed=1;endArrow=open;endSize=12;strokeColor=#b85450;fontColor=#b85450;fontSize=11;" target="uc_upload">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="pkg3" parent="1" style="shape=rectangle;whiteSpace=wrap;html=1;verticalAlign=top;fontStyle=1;fontSize=14;fillColor=#e1d5e7;strokeColor=#9673a6;rounded=1;arcSize=5;" value="E-Learning &amp; Lớp học" vertex="1">
+          <mxGeometry height="260" width="420" x="180" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_class" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Quản lý Lớp học" vertex="1">
+          <mxGeometry height="50" width="150" x="210" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_quiz" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Tạo Bài kiểm tra" vertex="1">
+          <mxGeometry height="50" width="150" x="210" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_take" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Làm bài kiểm tra" vertex="1">
+          <mxGeometry height="50" width="150" x="430" y="650" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_grade" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Chấm điểm&#xa;&amp; Đánh giá" vertex="1">
+          <mxGeometry height="50" width="150" x="430" y="720" as="geometry" />
+        </mxCell>
+        <mxCell id="uc_view" parent="1" style="ellipse;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fff2cc;strokeColor=#d6b656;" value="Xem điểm số" vertex="1">
+          <mxGeometry height="50" width="150" x="320" y="790" as="geometry" />
+        </mxCell>
+        <mxCell id="s1" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s2" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;exitX=0.5;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" target="uc_profile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;exitX=0.5;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;" target="uc_register">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_pay">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s5" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_take">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s6" edge="1" parent="1" source="actor_student" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_view">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l1" edge="1" parent="1" source="actor_lecturer" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l2" edge="1" parent="1" source="actor_lecturer" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_profile">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l3" edge="1" parent="1" source="actor_lecturer" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_class">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l4" edge="1" parent="1" source="actor_lecturer" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_quiz">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="l5" edge="1" parent="1" source="actor_lecturer" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_grade">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" edge="1" parent="1" source="actor_admin" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_login">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" edge="1" parent="1" source="actor_admin" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_manage_acc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" edge="1" parent="1" source="actor_admin" style="endArrow=none;html=1;strokeWidth=1.5;" target="uc_approve">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
