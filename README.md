@@ -69,7 +69,7 @@ EduTrack là một nền tảng quản lý giáo dục toàn diện được xâ
 
 ### 💡 Lưu ý về Quy trình Git
 Dự án được phân chia thành 4 nhánh chính: `main`, `backend`, `frontend`, `tester`. 
-Để đảm bảo CI/CD hoạt động trơn tru (không bị báo lỗi đỏ), GitHub Actions đã được thiết lập để tự động chạy lệnh `flutter build web` sau mỗi commit. Vui lòng đảm bảo code của bạn không có lỗi cú pháp trước khi Push.
+Để đảm bảo CI/CD hoạt động trơn tru (không bị báo lỗi đỏ), GitHub Actions đã được thiết lập để tự động chạy lệnh `flutter build web` sau mỗi commit. Vui lòng đảm bảo code không có lỗi cú pháp trước khi Push.
 
 ---
-*Phát triển và duy trì bởi đội ngũ EduTrack.*
+
